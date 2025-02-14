@@ -2,6 +2,15 @@
   "phases": {
     "package": {
       "context": {
+        "credentials": [
+          {
+            "url": "{VIB_ENV_CHARTS_REGISTRY}",
+            "authn": {
+              "username": "{VIB_ENV_CHARTS_REGISTRY_USERNAME}",
+              "password": "{VIB_ENV_CHARTS_REGISTRY_PASSWORD}"
+            }
+          }
+        ],
         "resources": {
           "url": "{SHA_ARCHIVE}",
           "path": "/bitnami/fluentd"
@@ -32,17 +41,13 @@
       },
       "actions": [
         {
-          "action_id": "health-check",
-          "params": {
-            "endpoint": "lb-fluentd-forwarder-http",
-            "app_protocol": "HTTP"
-          }
-        },
-        {
           "action_id": "goss",
           "params": {
             "resources": {
               "path": "/.vib"
+            },
+            "wait": {
+              "file": "fluentd/goss/goss-wait.yaml"
             },
             "tests_file": "fluentd/goss/goss.yaml",
             "remote": {
@@ -50,6 +55,12 @@
                 "workload": "ds-fluentd"
               }
             }
+          }
+        },
+        {
+          "action_id": "kubescape",
+          "params": {
+            "threshold": {VIB_ENV_KUBESCAPE_SCORE_THRESHOLD}
           }
         }
       ]

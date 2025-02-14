@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -9,9 +9,6 @@ kind: ClusterRole
 metadata:
   name: {{ template "kube-prometheus.operator.fullname" . }}
   labels: {{- include "kube-prometheus.operator.labels" . | nindent 4 }}
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -51,12 +48,13 @@ rules:
       - prometheuses/finalizers
       - thanosrulers
       - thanosrulers/finalizers
+      - thanosrulers/status
       - servicemonitors
       - podmonitors
       - probes
       - prometheusrules
       - scrapeconfigs
-      - prometheusagent
+      - prometheusagents
       - prometheusagents/finalizers
       - prometheusagents/status
     verbs:
@@ -108,6 +106,13 @@ rules:
       - list
       - watch
   - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - patch
+      - create
+  - apiGroups:
       - networking.k8s.io
     resources:
       - ingresses
@@ -115,4 +120,10 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - storageclasses
+    verbs:
+      - get
 {{- end }}

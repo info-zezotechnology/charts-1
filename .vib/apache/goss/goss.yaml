@@ -1,4 +1,4 @@
-# Copyright VMware, Inc.
+# Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
 http:
@@ -9,7 +9,7 @@ file:
   /etc/hosts:
     exists: true
     filetype: file
-    contains:
+    contents:
     {{ range .Vars.hostAliases }}
     {{ $ip := .ip }}
     {{ range $host := .hostnames }}

@@ -2,6 +2,15 @@
   "phases": {
     "package": {
       "context": {
+        "credentials": [
+          {
+            "url": "{VIB_ENV_CHARTS_REGISTRY}",
+            "authn": {
+              "username": "{VIB_ENV_CHARTS_REGISTRY_USERNAME}",
+              "password": "{VIB_ENV_CHARTS_REGISTRY_PASSWORD}"
+            }
+          }
+        ],
         "resources": {
           "url": "{SHA_ARCHIVE}",
           "path": "/bitnami/elasticsearch"
@@ -25,18 +34,11 @@
         "target_platform": {
           "target_platform_id": "{VIB_ENV_ALTERNATIVE_TARGET_PLATFORM}",
           "size": {
-            "name": "M4"
+            "name": "L4"
           }
         }
       },
       "actions": [
-        {
-          "action_id": "health-check",
-          "params": {
-            "endpoint": "lb-elasticsearch-tcp-rest-api",
-            "app_protocol": "HTTP"
-          }
-        },
         {
           "action_id": "goss",
           "params": {
@@ -60,6 +62,25 @@
             },
             "endpoint": "lb-elasticsearch-tcp-rest-api",
             "app_protocol": "HTTP"
+          }
+        },
+        {
+          "action_id": "ginkgo",
+          "params": {
+            "resources": {
+              "path": "/.vib/elasticsearch/ginkgo"
+            },
+            "params": {
+              "kubeconfig": "{{kubeconfig}}",
+              "namespace": "{{namespace}}",
+              "name": "elasticsearch"
+            }
+          }
+        },
+        {
+          "action_id": "kubescape",
+          "params": {
+            "threshold": {VIB_ENV_KUBESCAPE_SCORE_THRESHOLD}
           }
         }
       ]

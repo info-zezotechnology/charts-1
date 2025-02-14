@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -49,7 +49,7 @@ Return the proper image name (for the init container volume-permissions image)
 Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "prometheus.imagePullSecrets" -}}
-{{- include "common.images.pullSecrets" (dict "images" (list .Values.server.image .Values.volumePermissions.image .Values.server.thanos.image .Values.alertmanager.image) "global" .Values.global) -}}
+{{- include "common.images.renderPullSecrets" (dict "images" (list .Values.server.image .Values.volumePermissions.image .Values.server.thanos.image .Values.alertmanager.image) "context" $) -}}
 {{- end -}}
 
 {{/*

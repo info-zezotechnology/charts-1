@@ -2,6 +2,15 @@
   "phases": {
     "package": {
       "context": {
+        "credentials": [
+          {
+            "url": "{VIB_ENV_CHARTS_REGISTRY}",
+            "authn": {
+              "username": "{VIB_ENV_CHARTS_REGISTRY_USERNAME}",
+              "password": "{VIB_ENV_CHARTS_REGISTRY_PASSWORD}"
+            }
+          }
+        ],
         "resources": {
           "url": "{SHA_ARCHIVE}",
           "path": "/bitnami/flink"
@@ -16,52 +25,6 @@
         }
       ]
     },
-    "verify": {
-      "context": {
-        "resources": {
-          "url": "{SHA_ARCHIVE}",
-          "path": "/bitnami/flink"
-        },
-        "target_platform": {
-          "target_platform_id": "{VIB_ENV_TARGET_PLATFORM}",
-          "size": {
-            "name": "M4"
-          }
-        }
-      },
-      "actions": [
-        {
-          "action_id": "health-check",
-          "params": {
-            "endpoint": "lb-flink-jobmanager-http",
-            "app_protocol": "HTTP"
-          }
-        },
-        {
-          "action_id": "goss",
-          "params": {
-            "resources": {
-              "path": "/.vib"
-            },
-            "tests_file": "flink/goss/goss.yaml",
-            "vars_file": "flink/runtime-parameters.yaml",
-            "remote": {
-              "workload": "deploy-flink-jobmanager"
-            }
-          }
-        },
-        {
-          "action_id": "cypress",
-          "params": {
-            "resources": {
-              "path": "/.vib/flink/cypress"
-            },
-            "endpoint": "lb-flink-jobmanager-http",
-            "app_protocol": "HTTP"
-          }
-        }
-      ]
-    },
     "publish": {
       "actions": [
         {
@@ -72,7 +35,8 @@
               "url": "{VIB_ENV_S3_URL}",
               "authn": {
                 "access_key_id": "{VIB_ENV_S3_ACCESS_KEY_ID}",
-                "secret_access_key": "{VIB_ENV_S3_SECRET_ACCESS_KEY}"
+                "secret_access_key": "{VIB_ENV_S3_SECRET_ACCESS_KEY}",
+                "role": "{VIB_ENV_S3_ROLE_ARN}"
               }
             }
           }

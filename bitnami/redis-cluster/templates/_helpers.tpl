@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -141,7 +141,7 @@ Get the password secret.
 */}}
 {{- define "redis-cluster.secretName" -}}
 {{- if .Values.existingSecret -}}
-{{- printf "%s" .Values.existingSecret -}}
+{{- printf "%s" (tpl .Values.existingSecret $) -}}
 {{- else -}}
 {{- printf "%s" (include "common.names.fullname" .) -}}
 {{- end -}}
@@ -218,7 +218,7 @@ redis-cluster: newExternalIPs
 redis-cluster: currentNumberOfNodes
     You must provide the currentNumberOfNodes to perform an upgrade when not using external access.
     {{- end -}}
-    {{- if not .Values.cluster.update.currentNumberOfReplicas -}}
+    {{- if kindIs "invalid" .Values.cluster.update.currentNumberOfReplicas -}}
 redis-cluster: currentNumberOfReplicas
     You must provide the currentNumberOfReplicas to perform an upgrade when not using external access.
     {{- end -}}

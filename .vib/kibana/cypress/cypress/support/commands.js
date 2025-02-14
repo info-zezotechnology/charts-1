@@ -1,5 +1,5 @@
 /*
- * Copyright VMware, Inc.
+ * Copyright Broadcom, Inc. All Rights Reserved.
  * SPDX-License-Identifier: APACHE-2.0
  */
 
@@ -29,7 +29,7 @@ Cypress.on('uncaught:exception', (err) => {
   if (err.message.includes("Cannot read properties of undefined (reading 'includes')")) {
     return false;
   }
-  if(err.message.includes("ResizeObserver loop limit exceeded")){
+  if(err.message.includes("ResizeObserver loop")){
     return false;
   }
   // we still want to ensure there are no other unexpected

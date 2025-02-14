@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -127,72 +127,30 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this 
 {{- ternary "postgres" .Values.externalDatabase.user .Values.postgresql.enabled -}}
 {{- end -}}
 
-{{- define "harbor.database.notaryServerUsername" -}}
-{{- ternary "postgres" (default .Values.externalDatabase.user .Values.externalDatabase.notaryServerUsername) .Values.postgresql.enabled -}}
-{{- end -}}
-
-{{- define "harbor.database.notarySignerUsername" -}}
-{{- ternary "postgres" (default .Values.externalDatabase.user .Values.externalDatabase.notarySignerUsername) .Values.postgresql.enabled -}}
-{{- end -}}
-
 {{- define "harbor.database.rawPassword" -}}
 {{- if .Values.postgresql.enabled }}
-    {{- if .Values.global.postgresql }}
-        {{- if .Values.global.postgresql.auth }}
-            {{- coalesce .Values.global.postgresql.auth.postgresPassword .Values.postgresql.auth.postgresPassword -}}
-        {{- else -}}
-            {{- .Values.postgresql.auth.postgresPassword -}}
-        {{- end -}}
+  {{- if .Values.global.postgresql }}
+    {{- if .Values.global.postgresql.auth }}
+      {{- coalesce .Values.global.postgresql.auth.postgresPassword .Values.postgresql.auth.postgresPassword -}}
     {{- else -}}
-        {{- .Values.postgresql.auth.postgresPassword -}}
+      {{- .Values.postgresql.auth.postgresPassword -}}
     {{- end -}}
+  {{- else -}}
+    {{- .Values.postgresql.auth.postgresPassword -}}
+  {{- end -}}
 {{- else -}}
+  {{- if not .Values.externalDatabase.existingSecret -}}
     {{- .Values.externalDatabase.password -}}
+  {{- end -}}
 {{- end -}}
-{{- end -}}
-
-{{- define "harbor.database.notaryServerRawPassword" -}}
-{{- ternary (include "harbor.database.rawPassword" .) (default .Values.externalDatabase.password .Values.externalDatabase.notaryServerPassword) .Values.postgresql.enabled -}}
-{{- end -}}
-
-{{- define "harbor.database.notarySignerRawPassword" -}}
-{{- ternary (include "harbor.database.rawPassword" .) (default .Values.externalDatabase.password .Values.externalDatabase.notarySignerPassword) .Values.postgresql.enabled -}}
-{{- end -}}
-
-{{ define "harbor.database.escapedNotaryServerRawPassword" -}}
-  {{- include "harbor.database.notaryServerRawPassword" . | urlquery | replace "+" "%20" -}}
-{{- end -}}
-
-{{- define "harbor.database.escapedNotarySignerRawPassword" -}}
-  {{- include "harbor.database.notarySignerRawPassword" . | urlquery | replace "+" "%20" -}}
-{{- end -}}
-
-{{- define "harbor.database.encryptedPassword" -}}
-  {{- include "harbor.database.rawPassword" . | b64enc | quote -}}
 {{- end -}}
 
 {{- define "harbor.database.coreDatabase" -}}
 {{- ternary "registry" .Values.externalDatabase.coreDatabase .Values.postgresql.enabled -}}
 {{- end -}}
 
-{{- define "harbor.database.notaryServerDatabase" -}}
-{{- ternary "notaryserver" .Values.externalDatabase.notaryServerDatabase .Values.postgresql.enabled -}}
-{{- end -}}
-
-{{- define "harbor.database.notarySignerDatabase" -}}
-{{- ternary "notarysigner" .Values.externalDatabase.notarySignerDatabase .Values.postgresql.enabled -}}
-{{- end -}}
-
 {{- define "harbor.database.sslmode" -}}
 {{- ternary "disable" .Values.externalDatabase.sslmode .Values.postgresql.enabled -}}
-{{- end -}}
-
-{{- define "harbor.database.notaryServer" -}}
-postgres://{{ template "harbor.database.notaryServerUsername" . }}:{{ template "harbor.database.escapedNotaryServerRawPassword" . }}@{{ template "harbor.database.host" . }}:{{ template "harbor.database.port" . }}/{{ template "harbor.database.notaryServerDatabase" . }}?sslmode={{ template "harbor.database.sslmode" . }}
-{{- end -}}
-
-{{- define "harbor.database.notarySigner" -}}
-postgres://{{ template "harbor.database.notarySignerUsername" . }}:{{ template "harbor.database.escapedNotarySignerRawPassword" . }}@{{ template "harbor.database.host" . }}:{{ template "harbor.database.port" . }}/{{ template "harbor.database.notarySignerDatabase" . }}?sslmode={{ template "harbor.database.sslmode" . }}
 {{- end -}}
 
 {{/*
@@ -204,11 +162,15 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this 
 {{- end -}}
 
 {{- define "harbor.redis.host" -}}
-{{- ternary (ternary (printf "%s/%s" (printf "%s-headless:%d" (include "harbor.redis.fullname" .) (int64 .Values.redis.sentinel.service.ports.sentinel)) .Values.redis.sentinel.masterSet) (printf "%s-master" (include "harbor.redis.fullname" .)) .Values.redis.sentinel.enabled) (ternary (printf "%s/%s" .Values.externalRedis.sentinel.hosts .Values.externalRedis.sentinel.masterSet) .Values.externalRedis.host .Values.externalRedis.sentinel.enabled) .Values.redis.enabled -}}
+{{- ternary (ternary (printf "%s-headless" (include "harbor.redis.fullname" .)) (printf "%s-master" (include "harbor.redis.fullname" .)) .Values.redis.sentinel.enabled) (ternary (printf "%s" .Values.externalRedis.sentinel.hosts) .Values.externalRedis.host .Values.externalRedis.sentinel.enabled) .Values.redis.enabled -}}
 {{- end -}}
 
 {{- define "harbor.redis.port" -}}
-{{- ternary "6379" .Values.externalRedis.port .Values.redis.enabled -}}
+{{- ternary (ternary (int64 .Values.redis.sentinel.service.ports.sentinel) "6379" .Values.redis.sentinel.enabled) .Values.externalRedis.port .Values.redis.enabled -}}
+{{- end -}}
+
+{{- define "harbor.redis.sentinel.masterSet" -}}
+{{- ternary (ternary (printf "%s" .Values.redis.sentinel.masterSet) ("") .Values.redis.sentinel.enabled) (ternary (printf "%s" .Values.externalRedis.sentinel.masterSet) ("") .Values.externalRedis.sentinel.enabled) .Values.redis.enabled -}}
 {{- end -}}
 
 {{- define "harbor.redis.coreDatabaseIndex" -}}
@@ -261,9 +223,9 @@ Return whether Redis&reg; uses password authentication or not
     {{- end -}}
   {{- else -}}
     {{- if (include "harbor.redis.escapedRawPassword" . ) -}}
-      {{- printf "redis+sentinel://default:%s@%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.jobserviceDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://default:%s@%s:%s/%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.jobserviceDatabaseIndex" . ) -}}
     {{- else -}}
-      {{- printf "redis+sentinel://%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.jobserviceDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://%s:%s/%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.jobserviceDatabaseIndex" . ) -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -278,9 +240,9 @@ Return whether Redis&reg; uses password authentication or not
     {{- end -}}
   {{- else -}}
     {{- if (include "harbor.redis.escapedRawPassword" . ) -}}
-      {{- printf "redis+sentinel://default:%s@%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.registryDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://default:%s@%s:%s/%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.registryDatabaseIndex" . ) -}}
     {{- else -}}
-      {{- printf "redis+sentinel://%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.registryDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://%s:%s/%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.registryDatabaseIndex" . ) -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -294,9 +256,9 @@ Return whether Redis&reg; uses password authentication or not
     {{- end -}}
   {{- else -}}
     {{- if (include "harbor.redis.escapedRawPassword" . ) -}}
-      {{- printf "redis+sentinel://default:%s@%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.trivyAdapterDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://default:%s@%s:%s/%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.trivyAdapterDatabaseIndex" . ) -}}
     {{- else -}}
-      {{- printf "redis+sentinel://%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.trivyAdapterDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://%s:%s/%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.trivyAdapterDatabaseIndex" . ) -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -310,9 +272,9 @@ Return whether Redis&reg; uses password authentication or not
     {{- end -}}
   {{- else -}}
     {{- if (include "harbor.redis.escapedRawPassword" . ) -}}
-      {{- printf "redis+sentinel://default:%s@%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.coreDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://default:%s@%s:%s/%s/%s" (include "harbor.redis.escapedRawPassword" . ) (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.coreDatabaseIndex" . ) -}}
     {{- else -}}
-      {{- printf "redis+sentinel://%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.coreDatabaseIndex" . ) -}}
+      {{- printf "redis+sentinel://%s:%s/%s/%s" (include "harbor.redis.host" . ) (include "harbor.redis.port" . ) (include "harbor.redis.sentinel.masterSet" . ) (include "harbor.redis.coreDatabaseIndex" . ) -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -333,10 +295,6 @@ Return whether Redis&reg; uses password authentication or not
   {{- printf "%s-jobservice" (include "common.names.fullname" .) -}}
 {{- end -}}
 
-{{- define "harbor.jobserviceScanData" -}}
-  {{- printf "%s-jobservice-scandata" (include "common.names.fullname" .) -}}
-{{- end -}}
-
 {{- define "harbor.registry" -}}
   {{- printf "%s-registry" (include "common.names.fullname" .) -}}
 {{- end -}}
@@ -347,14 +305,6 @@ Return whether Redis&reg; uses password authentication or not
 
 {{- define "harbor.trivy" -}}
   {{- printf "%s-trivy" (include "common.names.fullname" .) -}}
-{{- end -}}
-
-{{- define "harbor.notary-server" -}}
-  {{- printf "%s-notary-server" (include "common.names.fullname" .) -}}
-{{- end -}}
-
-{{- define "harbor.notary-signer" -}}
-  {{- printf "%s-notary-signer" (include "common.names.fullname" .) -}}
 {{- end -}}
 
 {{- define "harbor.nginx" -}}
@@ -369,12 +319,8 @@ Return whether Redis&reg; uses password authentication or not
   {{- printf "%s-ingress" (include "common.names.fullname" .) -}}
 {{- end -}}
 
-{{- define "harbor.ingress-notary" -}}
-  {{- printf "%s-ingress-notary" (include "common.names.fullname" .) -}}
-{{- end -}}
-
 {{- define "harbor.noProxy" -}}
-  {{- printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" (include "harbor.core" .) (include "harbor.jobservice" .) (include "harbor.database" .) (include "harbor.notary-server" .) (include "harbor.notary-signer" .) (include "harbor.registry" .) (include "harbor.portal" .) (include "harbor.trivy" .) .Values.proxy.noProxy -}}
+  {{- printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" (include "harbor.core" .) (include "harbor.jobservice" .) (include "harbor.database" .) (include "harbor.registry" .) (include "harbor.portal" .) (include "harbor.trivy" .) .Values.proxy.noProxy -}}
 {{- end -}}
 
 {{/*
@@ -413,20 +359,6 @@ Return the proper Harbor Job Service image name
 {{- end -}}
 
 {{/*
-Return the proper Harbor Notary Server image name
-*/}}
-{{- define "harbor.notary.server.image" -}}
-{{- include "common.images.image" ( dict "imageRoot" .Values.notary.server.image "global" .Values.global ) -}}
-{{- end -}}
-
-{{/*
-Return the proper Harbor Notary Signer image name
-*/}}
-{{- define "harbor.notary.signer.image" -}}
-{{- include "common.images.image" ( dict "imageRoot" .Values.notary.signer.image "global" .Values.global ) -}}
-{{- end -}}
-
-{{/*
 Return the proper Harbor Registry image name
 */}}
 {{- define "harbor.registry.server.image" -}}
@@ -458,7 +390,7 @@ Return the proper image name (for the init container volume-permissions image)
 Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "harbor.imagePullSecrets" -}}
-{{- include "common.images.pullSecrets" (dict "images" (list .Values.core.image .Values.exporter.image .Values.portal.image .Values.jobservice.image .Values.trivy.image .Values.notary.server.image .Values.notary.signer.image .Values.registry.server.image .Values.registry.controller.image .Values.nginx.image .Values.volumePermissions.image) "global" .Values.global) -}}
+{{- include "common.images.pullSecrets" (dict "images" (list .Values.core.image .Values.exporter.image .Values.portal.image .Values.jobservice.image .Values.trivy.image .Values.registry.server.image .Values.registry.controller.image .Values.nginx.image .Values.volumePermissions.image) "global" .Values.global) -}}
 {{- end -}}
 
 {{/* Check if there are rolling tags in the images */}}
@@ -496,10 +428,10 @@ harbor: PostgreSQL password
     Please set a password (--set postgresql.auth.postgresPassword="xxxx")
   {{- end -}}
 {{- else -}}
-  {{- if not .Values.externalDatabase.password -}}
+    {{- if and (not .Values.externalDatabase.password) (not .Values.externalDatabase.existingSecret) -}}
 harbor: External PostgreSQL password
     An external database password is required!.
-    Please set a password (--set externalDatabase.password="xxxx")
+    Please set a password (--set externalDatabase.password="xxxx") or using an existing secret
   {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -533,4 +465,81 @@ TRACE_OTEL_COMPRESSION: {{ .Values.tracing.otel.compression | quote }}
 TRACE_OTEL_TIMEOUT: {{ .Values.tracing.otel.timeout | quote }}
 TRACE_OTEL_INSECURE: {{ .Values.tracing.otel.insecure | quote }}
 {{- end }}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Core
+*/}}
+{{- define "harbor.core.serviceAccountName" -}}
+{{- if .Values.core.serviceAccount.create -}}
+    {{ default (include "harbor.core" .) .Values.core.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.core.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Registry
+*/}}
+{{- define "harbor.registry.serviceAccountName" -}}
+{{- if .Values.registry.serviceAccount.create -}}
+    {{ default (include "harbor.registry" .) .Values.registry.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.registry.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Portal
+*/}}
+{{- define "harbor.portal.serviceAccountName" -}}
+{{- if .Values.portal.serviceAccount.create -}}
+    {{ default (include "harbor.portal" .) .Values.portal.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.portal.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Jobservice
+*/}}
+{{- define "harbor.jobservice.serviceAccountName" -}}
+{{- if .Values.jobservice.serviceAccount.create -}}
+    {{ default (include "harbor.jobservice" .) .Values.jobservice.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.jobservice.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Exporter
+*/}}
+{{- define "harbor.exporter.serviceAccountName" -}}
+{{- if .Values.exporter.serviceAccount.create -}}
+    {{ default (include "harbor.exporter" .) .Values.exporter.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.exporter.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Trivy
+*/}}
+{{- define "harbor.trivy.serviceAccountName" -}}
+{{- if .Values.trivy.serviceAccount.create -}}
+    {{ default (include "harbor.trivy" .) .Values.trivy.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.trivy.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the service account to use for the Harbor Nginx
+*/}}
+{{- define "harbor.nginx.serviceAccountName" -}}
+{{- if .Values.nginx.serviceAccount.create -}}
+    {{ default (include "harbor.nginx" .) .Values.nginx.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else -}}
+    {{ default "default" .Values.nginx.serviceAccount.name }}
+{{- end -}}
 {{- end -}}

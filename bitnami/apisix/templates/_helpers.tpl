@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -315,7 +315,7 @@ Init container definition for waiting for the database to be ready
 # This init container renders and merges the APISIX configuration files, as well
 # as preparing the Nginx server. We need to use a volume because we're working with
 # ReadOnlyRootFilesystem
-- name: prepare-apisix
+- name: prepare-apisix-dirs
   image: {{ template "apisix.image" .context }}
   imagePullPolicy: {{ .context.Values.image.pullPolicy }}
   {{- $block := "" }}
@@ -325,7 +325,7 @@ Init container definition for waiting for the database to be ready
   {{- $block = index .context.Values "controlPlane" }}
   {{- end }}
   {{- if $block.containerSecurityContext.enabled }}
-  securityContext: {{- omit $block.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $block.containerSecurityContext "context" .context) | nindent 4 }}
   {{- end }}
   command:
     - bash
@@ -337,9 +337,7 @@ Init container definition for waiting for the database to be ready
       ln -sf /opt/bitnami/apisix/openresty/luajit/share/lua/*/apisix /usr/local/apisix
       mkdir -p /usr/local/apisix/logs
       # Build final config.yaml with the sections of the different files
-      find /bitnami/apisix/conf -type f -name *.yaml -print0 | sort -z | xargs -0 yq eval-all '. as $item ireduce ({}; . * $item )' > /usr/local/apisix/conf/pre-render-config.yaml
-      render-template /usr/local/apisix/conf/pre-render-config.yaml > /usr/local/apisix/conf/config.yaml
-      rm /usr/local/apisix/conf/pre-render-config.yaml
+      cp /bitnami/apisix/rendered-conf/config.yaml /usr/local/apisix/conf/
       chmod 644 /usr/local/apisix/conf/config.yaml
       apisix init
       {{- if eq .component "control-plane" }}
@@ -353,6 +351,7 @@ Init container definition for waiting for the database to be ready
   env:
     - name: BITNAMI_DEBUG
       value: {{ ternary "true" "false" (or .context.Values.image.debug .context.Values.diagnosticMode.enabled) | quote }}
+    {{- if .context.Values.controlPlane.enabled }}
     - name: APISIX_ADMIN_API_TOKEN
       valueFrom:
         secretKeyRef:
@@ -363,6 +362,7 @@ Init container definition for waiting for the database to be ready
         secretKeyRef:
           name: {{ include "apisix.control-plane.secretName" .context }}
           key: {{ include "apisix.control-plane.viewerTokenKey" .context }}
+    {{- end }}
     {{- if (include "apisix.etcd.authEnabled" .context) }}
     - name: APISIX_ETCD_USER
       value: {{ include "apisix.etcd.user" .context }}
@@ -373,7 +373,7 @@ Init container definition for waiting for the database to be ready
           key: {{ include "apisix.etcd.secretPasswordKey" .context }}
     {{- end }}
     {{- if $block.extraEnvVars }}
-    {{- include "common.tplvalues.render" (dict "value" $block.extraEnvVars "context" $) | nindent 4 }}
+    {{- include "common.tplvalues.render" (dict "value" $block.extraEnvVars "context" .context) | nindent 4 }}
     {{- end }}
   envFrom:
     {{- if $block.extraEnvVarsCM }}
@@ -382,19 +382,18 @@ Init container definition for waiting for the database to be ready
     {{- end }}
     {{- if $block.extraEnvVarsSecret }}
     - secretRef:
-        name: {{ include "common.tplvalues.render" (dict "value" $block.extraEnvVarsSecret "context" $) }}
+        name: {{ include "common.tplvalues.render" (dict "value" $block.extraEnvVarsSecret "context" .context) }}
     {{- end }}
   volumeMounts:
-    - name: apisix-dir
+    - name: empty-dir
       mountPath: /usr/local/apisix
-    - name: config
-      mountPath: /bitnami/apisix/conf/00_default
-    - name: tmp
+      subPath: app-tmp-dir
+    - name: empty-dir
+      mountPath: /bitnami/apisix/rendered-conf
+      subPath: app-conf-dir
+    - name: empty-dir
       mountPath: /tmp
-    {{- if or $block.extraConfig $block.extraConfigExistingConfigMap }}
-    - name: extra-config
-      mountPath: /bitnami/apisix/conf/01_extra
-    {{- end }}
+      subPath: tmp-dir
     {{- if $block.tls.enabled }}
     - name: certs
       mountPath: /bitnami/certs
@@ -409,7 +408,7 @@ Init container definition for waiting for the database to be ready
   image: {{ template "apisix.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
   {{- end }}
   command:
     - bash
@@ -441,8 +440,13 @@ Init container definition for waiting for the database to be ready
       )
 
       check_etcd() {
+          local curl_options=()
+          {{- if and .Values.etcd.auth.client.secureTransport .Values.etcd.auth.client.useAutoTLS }}
+          curl_options=("--insecure" ${curl_options[*]})
+          {{- end }}
+
           local -r etcd_host="${1:-?missing etcd}"
-          if curl --max-time 5 "${etcd_host}/version" | grep etcdcluster; then
+          if curl "${curl_options[@]}" --max-time 5 "${etcd_host}/version" | grep etcdcluster; then
              return 0
           else
              return 1
@@ -471,7 +475,7 @@ Init container definition for waiting for the database to be ready
   image: {{ template "apisix.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
   {{- end }}
   command:
     - bash
@@ -534,16 +538,20 @@ Render configuration for the dashboard and ingress-controller components
 # as preparing the Nginx server. We need to use a volume because we're working with
 # ReadOnlyRootFilesystem
 - name: render-conf
-  image: {{ template "apisix.image" .context }}
+  image: {{ template "apisix.wait-container.image" .context }}
   imagePullPolicy: {{ .context.Values.image.pullPolicy }}
   {{- $block := "" }}
   {{- if eq .component "ingress-controller" }}
   {{- $block = index .context.Values "ingressController" }}
+  {{- else if eq .component "control-plane" }}
+  {{- $block = index .context.Values "controlPlane" }}
+  {{- else if eq .component "data-plane" }}
+  {{- $block = index .context.Values "dataPlane" }}
   {{- else }}
   {{- $block = index .context.Values "dashboard" }}
   {{- end }}
   {{- if $block.containerSecurityContext.enabled }}
-  securityContext: {{- omit $block.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $block.containerSecurityContext "context" .context) | nindent 4 }}
   {{- end }}
   command:
     - bash
@@ -558,6 +566,7 @@ Render configuration for the dashboard and ingress-controller components
   env:
     - name: BITNAMI_DEBUG
       value: {{ ternary "true" "false" (or .context.Values.image.debug .context.Values.diagnosticMode.enabled) | quote }}
+    {{- if .context.Values.controlPlane.enabled }}
     - name: APISIX_ADMIN_API_TOKEN
       valueFrom:
         secretKeyRef:
@@ -568,6 +577,7 @@ Render configuration for the dashboard and ingress-controller components
         secretKeyRef:
           name: {{ include "apisix.control-plane.secretName" .context }}
           key: {{ include "apisix.control-plane.viewerTokenKey" .context }}
+    {{- end }}
     {{- if (include "apisix.etcd.authEnabled" .context) }}
     - name: APISIX_ETCD_USER
       value: {{ include "apisix.etcd.user" .context }}
@@ -599,8 +609,9 @@ Render configuration for the dashboard and ingress-controller components
         name: {{ include "common.tplvalues.render" (dict "value" $block.extraEnvVarsSecret "context" $) }}
     {{- end }}
   volumeMounts:
-    - name: rendered-config
+    - name: empty-dir
       mountPath: /bitnami/apisix/rendered-conf
+      subPath: app-conf-dir
     - name: config
       mountPath: /bitnami/apisix/conf/00_default
     {{- if or $block.extraConfig $block.extraConfigExistingConfigMap }}

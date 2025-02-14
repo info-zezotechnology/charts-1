@@ -16,8 +16,12 @@ service:
   type: LoadBalancer
   ports:
     http: 80
-    https: 8444
-  advertisedHttpsPort: 8444
+    https: 443
+  advertisedHttpsPort: 443
+extraVolumeMounts:
+  - name: empty-dir
+    mountPath: /opt/bitnami/ejbca/p12
+    subPath: test-dir
 mariadb:
   enabled: true
   auth:

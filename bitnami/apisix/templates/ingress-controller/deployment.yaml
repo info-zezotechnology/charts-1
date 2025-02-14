@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -9,12 +9,11 @@ kind: Deployment
 metadata:
   name: {{ template "apisix.ingress-controller.fullname" . }}
   namespace: {{ include "common.names.namespace" . | quote }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  {{- $versionLabel := dict "app.kubernetes.io/version" ( include "common.images.version" ( dict "imageRoot" .Values.ingressController.image "chart" .Chart ) ) }}
+  {{- $labels := include "common.tplvalues.merge" ( dict "values" ( list .Values.commonLabels $versionLabel ) "context" . ) }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: apisix
     app.kubernetes.io/component: ingress-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -25,8 +24,9 @@ spec:
   {{- if .Values.ingressController.updateStrategy }}
   strategy: {{- toYaml .Values.ingressController.updateStrategy | nindent 4 }}
   {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.ingressController.podLabels .Values.commonLabels $versionLabel ) "context" . ) }}
   selector:
-    matchLabels: {{- include "common.labels.matchLabels" . | nindent 6 }}
+    matchLabels: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 6 }}
       app.kubernetes.io/part-of: apisix
       app.kubernetes.io/component: ingress-controller
   template:
@@ -41,18 +41,13 @@ spec:
         {{- if .Values.commonAnnotations }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 8 }}
         {{- end }}
-      labels: {{- include "common.labels.standard" . | nindent 8 }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
         app.kubernetes.io/part-of: apisix
         app.kubernetes.io/component: ingress-controller
-        {{- if .Values.ingressController.podLabels }}
-        {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.podLabels "context" $) | nindent 8 }}
-        {{- end }}
-        {{- if .Values.commonLabels }}
-        {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 8 }}
-        {{- end }}
     spec:
       serviceAccountName: {{ template "apisix.ingress-controller.serviceAccountName" . }}
       {{- include "apisix.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: {{ .Values.ingressController.automountServiceAccountToken }}
       {{- if .Values.ingressController.hostAliases }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.hostAliases "context" $) | nindent 8 }}
       {{- end }}
@@ -60,8 +55,8 @@ spec:
       affinity: {{- include "common.tplvalues.render" ( dict "value" .Values.ingressController.affinity "context" $) | nindent 8 }}
       {{- else }}
       affinity:
-        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.ingressController.podAffinityPreset "component" "ingress-controller" "context" $) | nindent 10 }}
-        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.ingressController.podAntiAffinityPreset "component" "ingress-controller" "context" $) | nindent 10 }}
+        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.ingressController.podAffinityPreset "component" "ingress-controller" "customLabels" $podLabels "context" $) | nindent 10 }}
+        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.ingressController.podAntiAffinityPreset "component" "ingress-controller" "customLabels" $podLabels "context" $) | nindent 10 }}
         nodeAffinity: {{- include "common.affinities.nodes" (dict "type" .Values.ingressController.nodeAffinityPreset.type "key" .Values.ingressController.nodeAffinityPreset.key "values" .Values.ingressController.nodeAffinityPreset.values) | nindent 10 }}
       {{- end }}
       {{- if .Values.ingressController.nodeSelector }}
@@ -80,7 +75,7 @@ spec:
       topologySpreadConstraints: {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.topologySpreadConstraints "context" .) | nindent 8 }}
       {{- end }}
       {{- if .Values.ingressController.podSecurityContext.enabled }}
-      securityContext: {{- omit .Values.ingressController.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.ingressController.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
       {{- if .Values.ingressController.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ .Values.ingressController.terminationGracePeriodSeconds }}
@@ -98,7 +93,7 @@ spec:
           image: {{ template "apisix.ingress-controller.image" . }}
           imagePullPolicy: {{ .Values.ingressController.image.pullPolicy }}
           {{- if .Values.ingressController.containerSecurityContext.enabled }}
-          securityContext: {{- omit .Values.ingressController.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.ingressController.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           {{- if .Values.diagnosticMode.enabled }}
           command: {{- include "common.tplvalues.render" (dict "value" .Values.diagnosticMode.command "context" $) | nindent 12 }}
@@ -130,6 +125,8 @@ spec:
             {{- end }}
           {{- if .Values.ingressController.resources }}
           resources: {{- toYaml .Values.ingressController.resources | nindent 12 }}
+          {{- else if ne .Values.ingressController.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" .Values.ingressController.resourcesPreset) | nindent 12 }}
           {{- end }}
           ports:
             - name: http
@@ -141,8 +138,7 @@ spec:
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if .Values.ingressController.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.ingressController.livenessProbe "enabled") "context" $) | nindent 12 }}
-            httpGet:
-              path: /healthz
+            tcpSocket:
               port: http
           {{- end }}
           {{- if .Values.ingressController.customReadinessProbe }}
@@ -166,10 +162,12 @@ spec:
           lifecycle: {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: rendered-config
+            - name: empty-dir
               mountPath: /bitnami/apisix-ingress-controller/conf
-            - name: tmp
+              subPath: app-conf-dir
+            - name: empty-dir
               mountPath: /tmp
+              subPath: tmp-dir
             {{- if .Values.ingressController.tls.enabled }}
             - name: certs
               mountPath: /bitnami/certs
@@ -194,9 +192,7 @@ spec:
           configMap:
             name: {{ include "apisix.ingress-controller.extraConfigmapName" . }}
         {{- end }}
-        - name: rendered-config
-          emptyDir: {}
-        - name: tmp
+        - name: empty-dir
           emptyDir: {}
         {{- if .Values.ingressController.tls.enabled }}
         - name: certs

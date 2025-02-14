@@ -1,19 +1,19 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
 {{- if and .Values.sourceController.enabled .Values.sourceController.rbac.create }}
-kind: ClusterRoleBinding
+{{- $bindingKind := ternary "ClusterRoleBinding" "RoleBinding" .Values.sourceController.watchAllNamespaces }}
+{{- $versionLabel := dict "app.kubernetes.io/version" ( include "common.images.version" ( dict "imageRoot" .Values.sourceController.image "chart" .Chart ) ) }}
+{{- $labels := include "common.tplvalues.merge" ( dict "values" ( list .Values.commonLabels $versionLabel ) "context" . ) }}
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-manager" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -26,16 +26,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-bucket-editor" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -48,16 +45,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-bucket-viewer" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -69,18 +63,14 @@ subjects:
   - kind: ServiceAccount
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
-
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-gitrepository-editor" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -93,16 +83,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-gitrepository-viewer" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -115,16 +102,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-helmchart-editor" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -137,16 +121,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-helmchart-viewer" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -159,16 +140,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-helmrepository-editor" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -181,16 +159,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-helmrepository-viewer" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -203,16 +178,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-ocirepository-editor" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -225,16 +197,13 @@ subjects:
     name: {{ template "flux.source-controller.serviceAccountName" . }}
     namespace: {{ include "common.names.namespace" . | quote }}
 ---
-kind: ClusterRoleBinding
+kind: {{ $bindingKind }}
 apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
 metadata:
   name: {{ printf "%s-ocirepository-viewer" (include "flux.source-controller.fullname.namespace" .) | trunc 63 | trimSuffix "-" }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: flux
     app.kubernetes.io/component: source-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}

@@ -1,7 +1,8 @@
-# Copyright VMware, Inc.
+# Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
 command:
+  {{- if .Vars.server.containerSecurityContext.enabled }}
   check-no-capabilities:
     exec: cat /proc/1/status
     exit-status: 0
@@ -11,6 +12,7 @@ command:
     - "CapEff:	0000000000000000"
     - "CapBnd:	0000000000000000"
     - "CapAmb:	0000000000000000"
+  {{- end }}
   {{- $uid := .Vars.server.podSecurityContext.runAsUser }}
   {{- $gid := .Vars.server.podSecurityContext.fsGroup }}
   check-user-info:
@@ -25,15 +27,26 @@ command:
     stdout:
     - /serviceaccount.*name.*{{.Env.BITNAMI_APP_NAME }}/
   {{ end }}
+  check-config-files:
+    exec: promtool check config /opt/bitnami/prometheus/conf/{{ .Vars.server.existingConfigmapKey }}
+    exit-status: 0
+    stdout:
+    - "SUCCESS"
+  check-metrics:
+    exec: promtool query instant http://localhost:{{ .Vars.server.containerPorts.http }} prometheus_http_requests_total
+    exit-status: 0
+    stdout:
+    - "/-/healthy"
+    - "/-/ready"
 file:
   /opt/bitnami/prometheus/conf/{{ .Vars.server.existingConfigmapKey }}:
     exists: true
-    contains:
+    contents:
     - "job_name: alertmanager"
     - "{{ (first .Vars.server.extraScrapeConfigs).job_name }}"
   /opt/bitnami/prometheus/conf/rules.yaml:
     exists: true
-    contains:
+    contents:
     - "{{ (first .Vars.server.alertingRules.groups).name }}"
   {{.Vars.server.persistence.mountPath}}:
     exists: true
@@ -42,7 +55,7 @@ file:
     owner: root
   /proc/1/cmdline:
     exists: true
-    contains:
+    contents:
     - "--enable-feature={{ .Vars.server.enableFeatures | first }}"
 http:
   http://localhost:{{ .Vars.server.containerPorts.http }}/-/ready:
@@ -63,15 +76,3 @@ http:
     body:
     - "{{ (first (first .Vars.server.alertingRules.groups).rules).annotations.summary }}"
   {{- end }}
-command:
-  check-config-files:
-    exec: promtool check config /opt/bitnami/prometheus/conf/{{ .Vars.server.existingConfigmapKey }}
-    exit-status: 0
-    stdout:
-    - SUCCESS
-  check-metrics:
-    exec: promtool query instant http://localhost:{{ .Vars.server.containerPorts.http }} prometheus_http_requests_total
-    exit-status: 0
-    stdout:
-    - "/-/healthy"
-    - "/-/ready"
