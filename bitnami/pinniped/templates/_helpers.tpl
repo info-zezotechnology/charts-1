@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -15,6 +15,32 @@ Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "pinniped.imagePullSecrets" -}}
 {{- include "common.images.pullSecrets" (dict "images" (list .Values.image) "global" .Values.global) -}}
+{{- end -}}
+
+{{/*
+Return the proper Docker Image Registry Secret Names using the pinniped.yaml format
+{{ include "pinniped.config.imagePullSecrets" ( dict "images" (list .Values.path.to.the.image1, .Values.path.to.the.image2) "global" .Values.global) }}
+*/}}
+{{- define "pinniped.config.imagePullSecrets" -}}
+{{- $pullSecrets := list -}}
+{{- if .global -}}
+{{- range .global.imagePullSecrets -}}
+{{- $pullSecrets = append $pullSecrets . -}}
+{{- end -}}
+{{- end -}}
+
+{{- range .images -}}
+{{- range .pullSecrets -}}
+{{- $pullSecrets = append $pullSecrets . -}}
+{{- end -}}
+{{- end -}}
+
+{{- if (not (empty $pullSecrets)) -}}
+imagePullSecrets:
+{{- range $pullSecrets | uniq }}
+ - {{ . }}
+{{- end }}
+{{- end -}}
 {{- end -}}
 
 {{/*

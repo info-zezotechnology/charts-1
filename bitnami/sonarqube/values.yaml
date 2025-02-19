@@ -1,4 +1,4 @@
-# Copyright VMware, Inc.
+# Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
 ## @section Global parameters
@@ -9,7 +9,8 @@
 
 ## @param global.imageRegistry Global Docker image registry
 ## @param global.imagePullSecrets Global Docker registry secret names as an array
-## @param global.storageClass Global StorageClass for Persistent Volume(s)
+## @param global.defaultStorageClass Global default StorageClass for Persistent Volume(s)
+## @param global.storageClass DEPRECATED: use global.defaultStorageClass instead
 ##
 global:
   imageRegistry: ""
@@ -18,8 +19,22 @@ global:
   ##   - myRegistryKeySecretName
   ##
   imagePullSecrets: []
+  defaultStorageClass: ""
   storageClass: ""
-
+  ## Security parameters
+  ##
+  security:
+    ## @param global.security.allowInsecureImages Allows skipping image verification
+    allowInsecureImages: false
+  ## Compatibility adaptations for Kubernetes platforms
+  ##
+  compatibility:
+    ## Compatibility adaptations for Openshift
+    ##
+    openshift:
+      ## @param global.compatibility.openshift.adaptSecurityContext Adapt the securityContext sections of the deployment to make them compatible with Openshift restricted-v2 SCC: remove runAsUser, runAsGroup and fsGroup and let the platform use their allowed default IDs. Possible values: auto (apply if the detected running cluster is Openshift), force (perform the adaptation always), disabled (do not perform adaptation)
+      ##
+      adaptSecurityContext: auto
 ## @section Common parameters
 ##
 
@@ -44,7 +59,6 @@ clusterDomain: cluster.local
 ## @param extraDeploy Array of extra objects to deploy with the release
 ##
 extraDeploy: []
-
 ## Enable diagnostic mode in the deployment
 ##
 diagnosticMode:
@@ -59,15 +73,14 @@ diagnosticMode:
   ##
   args:
     - infinity
-
 ## @section SonarQube&trade; Image parameters
 ##
 
 ## Bitnami SonarQube&trade; image
 ## ref: https://hub.docker.com/r/bitnami/sonarqube/tags/
-## @param image.registry SonarQube&trade; image registry
-## @param image.repository SonarQube&trade; image repository
-## @param image.tag SonarQube&trade; image tag (immutable tags are recommended)
+## @param image.registry [default: REGISTRY_NAME] SonarQube&trade; image registry
+## @param image.repository [default: REPOSITORY_NAME/sonarqube] SonarQube&trade; image repository
+## @skip image.tag SonarQube&trade; image tag (immutable tags are recommended)
 ## @param image.digest SonarQube&trade; image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
 ## @param image.pullPolicy SonarQube&trade; image pull policy
 ## @param image.pullSecrets SonarQube&trade; image pull secrets
@@ -76,11 +89,10 @@ diagnosticMode:
 image:
   registry: docker.io
   repository: bitnami/sonarqube
-  tag: 10.1.0-debian-11-r6
+  tag: 25.2.0-debian-12-r0
   digest: ""
   ## Specify a imagePullPolicy
-  ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
-  ## ref: https://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+  ## ref: https://kubernetes.io/docs/concepts/containers/images/#pre-pulled-images
   ##
   pullPolicy: IfNotPresent
   ## Optionally specify an array of imagePullSecrets.
@@ -94,7 +106,6 @@ image:
   ## Enable debug mode
   ##
   debug: false
-
 ## @section SonarQube&trade; Configuration parameters
 ## SonarQube&trade; settings based on environment variables
 ## ref: https://github.com/bitnami/containers/tree/main/bitnami/sonarqube#environment-variables
@@ -130,7 +141,7 @@ jvmOpts: ""
 jvmCeOpts: ""
 ## @param startTimeout Timeout for the application to start in seconds
 ##
-startTimeout: 150
+startTimeout: 300
 ## @param extraProperties List of extra properties to be set in the sonar.properties file (key=value format)
 ## e.g:
 ## extraProperties:
@@ -180,8 +191,8 @@ ldap:
   ## User Mapping
   ## @param ldap.user.baseDn Distinguished Name (DN) of the root node in LDAP from which to search for users.
   ## @param ldap.user.request LDAP user request.
-  ## @param ldap.user.realNameAttribute in LDAP defining the user’s real name.
-  ## @param ldap.user.emailAttribute Attribute in LDAP defining the user’s email.
+  ## @param ldap.user.realNameAttribute in LDAP defining the user's real name.
+  ## @param ldap.user.emailAttribute Attribute in LDAP defining the user's email.
   ##
   user:
     baseDn: ""
@@ -191,7 +202,7 @@ ldap:
   ## Group Mapping
   ## @param ldap.group.baseDn Distinguished Name (DN) of the root node in LDAP from which to search for groups.
   ## @param ldap.group.request LDAP group request.
-  ## @param ldap.group.idAttribute Attribute in LDAP defining the group’s real name.
+  ## @param ldap.group.idAttribute Attribute in LDAP defining the group's real name.
   ##
   group:
     baseDn: ""
@@ -234,7 +245,6 @@ extraEnvVarsCM: ""
 ## @param extraEnvVarsSecret Name of existing Secret containing extra env vars for SonarQube&trade; nodes
 ##
 extraEnvVarsSecret: ""
-
 ## @section SonarQube&trade; deployment parameters
 ##
 
@@ -302,33 +312,65 @@ customReadinessProbe: {}
 ##
 customStartupProbe: {}
 ## SonarQube&trade; resource requests and limits
-## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-## @param resources.limits The resources limits for the SonarQube&trade; containers
-## @param resources.requests [object] The requested resources for the SonarQube&trade; containers
+## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+## @param resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if resources is set (resources is recommended for production).
+## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
 ##
-resources:
-  limits: {}
-  requests:
-    cpu: 100m
-    memory: 2048Mi
+resourcesPreset: "xlarge"
+## @param resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+## Example:
+## resources:
+##   requests:
+##     cpu: 2
+##     memory: 512Mi
+##   limits:
+##     cpu: 3
+##     memory: 1024Mi
+##
+resources: {}
 ## Configure Pods Security Context
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
 ## @param podSecurityContext.enabled Enabled SonarQube&trade; pods' Security Context
+## @param podSecurityContext.fsGroupChangePolicy Set filesystem group change policy
+## @param podSecurityContext.sysctls Set kernel settings using the sysctl interface
+## @param podSecurityContext.supplementalGroups Set filesystem extra groups
 ## @param podSecurityContext.fsGroup Set SonarQube&trade; pod's Security Context fsGroup
 ##
 podSecurityContext:
   enabled: true
+  fsGroupChangePolicy: Always
+  sysctls: []
+  supplementalGroups: []
   fsGroup: 1001
 ## Configure Container Security Context
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
-## @param containerSecurityContext.enabled Enabled SonarQube&trade; containers' Security Context
-## @param containerSecurityContext.runAsUser Set SonarQube&trade; containers' Security Context runAsUser
-## @param containerSecurityContext.runAsNonRoot Set SonarQube&trade; containers' Security Context runAsNonRoot
+## @param containerSecurityContext.enabled Enabled containers' Security Context
+## @param containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+## @param containerSecurityContext.runAsUser Set containers' Security Context runAsUser
+## @param containerSecurityContext.runAsGroup Set containers' Security Context runAsGroup
+## @param containerSecurityContext.runAsNonRoot Set container's Security Context runAsNonRoot
+## @param containerSecurityContext.privileged Set container's Security Context privileged
+## @param containerSecurityContext.readOnlyRootFilesystem Set container's Security Context readOnlyRootFilesystem
+## @param containerSecurityContext.allowPrivilegeEscalation Set container's Security Context allowPrivilegeEscalation
+## @param containerSecurityContext.capabilities.drop List of capabilities to be dropped
+## @param containerSecurityContext.seccompProfile.type Set container's Security Context seccomp profile
 ##
 containerSecurityContext:
   enabled: true
+  seLinuxOptions: {}
   runAsUser: 1001
+  runAsGroup: 1001
   runAsNonRoot: true
+  privileged: false
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: "RuntimeDefault"
+## @param automountServiceAccountToken Mount Service Account token in pod
+##
+automountServiceAccountToken: false
 ## @param hostAliases SonarQube&trade; pods host aliases
 ## https://kubernetes.io/docs/concepts/services-networking/add-entries-to-pod-etc-hosts-with-host-aliases/
 ##
@@ -372,19 +414,19 @@ nodeAffinityPreset:
 ##
 affinity: {}
 ## @param nodeSelector Node labels for SonarQube&trade; pods assignment
-## ref: https://kubernetes.io/docs/user-guide/node-selection/
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
 ##
 nodeSelector: {}
 ## @param tolerations Tolerations for SonarQube&trade; pods assignment
 ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
 ##
 tolerations: []
-## @param updateStrategy.type SonarQube&trade; statefulset strategy type
-## ref: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#update-strategies
+## @param updateStrategy.type SonarQube&trade; deployment strategy type
+## ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
 ##
 updateStrategy:
   ## StrategyType
-  ## Can be set to RollingUpdate or OnDelete
+  ## Can be set to RollingUpdate or Recreate
   ##
   type: RollingUpdate
 ## @param priorityClassName SonarQube&trade; pods' priorityClassName
@@ -424,7 +466,16 @@ sidecars: []
 ##    command: ['sh', '-c', 'echo "hello world"']
 ##
 initContainers: []
-
+## Pod Disruption Budget configuration
+## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb
+## @param pdb.create Enable/disable a Pod Disruption Budget creation
+## @param pdb.minAvailable Minimum number/percentage of pods that should remain scheduled
+## @param pdb.maxUnavailable Maximum number/percentage of pods that may be made unavailable. Defaults to `1` if both `pdb.minAvailable` and `pdb.maxUnavailable` are empty.
+##
+pdb:
+  create: true
+  minAvailable: ""
+  maxUnavailable: ""
 ## @section Traffic Exposure Parameters
 ##
 
@@ -485,8 +536,63 @@ service:
   ##     timeoutSeconds: 300
   ##
   sessionAffinityConfig: {}
+## Network Policies
+## Ref: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+##
+networkPolicy:
+  ## @param networkPolicy.enabled Specifies whether a NetworkPolicy should be created
+  ##
+  enabled: true
+  ## @param networkPolicy.allowExternal Don't require client label for connections
+  ## The Policy model to apply. When set to false, only pods with the correct
+  ## client label will have network access to the ports the application is listening
+  ## on. When true, the app will accept connections from any source
+  ## (with the correct destination port).
+  ##
+  allowExternal: true
+  ## @param networkPolicy.allowExternalEgress Allow the pod to access any range of port and all destinations.
+  ##
+  allowExternalEgress: true
+  ## @param networkPolicy.extraIngress [array] Add extra ingress rules to the NetworkPolicy
+  ## e.g:
+  ## extraIngress:
+  ##   - ports:
+  ##       - port: 1234
+  ##     from:
+  ##       - podSelector:
+  ##           - matchLabels:
+  ##               - role: frontend
+  ##       - podSelector:
+  ##           - matchExpressions:
+  ##               - key: role
+  ##                 operator: In
+  ##                 values:
+  ##                   - frontend
+  extraIngress: []
+  ## @param networkPolicy.extraEgress [array] Add extra ingress rules to the NetworkPolicy
+  ## e.g:
+  ## extraEgress:
+  ##   - ports:
+  ##       - port: 1234
+  ##     to:
+  ##       - podSelector:
+  ##           - matchLabels:
+  ##               - role: frontend
+  ##       - podSelector:
+  ##           - matchExpressions:
+  ##               - key: role
+  ##                 operator: In
+  ##                 values:
+  ##                   - frontend
+  ##
+  extraEgress: []
+  ## @param networkPolicy.ingressNSMatchLabels [object] Labels to match to allow traffic from other namespaces
+  ## @param networkPolicy.ingressNSPodMatchLabels [object] Pod labels to match to allow traffic from other namespaces
+  ##
+  ingressNSMatchLabels: {}
+  ingressNSPodMatchLabels: {}
 ## SonarQube&trade; ingress parameters
-## ref: https://kubernetes.io/docs/user-guide/ingress/
+## ref: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ##
 ingress:
   ## @param ingress.enabled Enable ingress record generation for SonarQube&trade;
@@ -595,7 +701,6 @@ ingress:
   ##             name: http
   ##
   extraRules: []
-
 ## @section SonarQube caCerts provisioning parameters
 ##
 ## Provide a secret containing one or more certificate files in the keys that will be added to cacerts
@@ -606,9 +711,9 @@ caCerts:
   enabled: false
   ## OS Shell + Utility image
   ## ref: https://hub.docker.com/r/bitnami/os-shell/tags/
-  ## @param caCerts.image.registry OS Shell + Utility image registry
-  ## @param caCerts.image.repository OS Shell + Utility image repository
-  ## @param caCerts.image.tag OS Shell + Utility image tag (immutable tags are recommended)
+  ## @param caCerts.image.registry [default: REGISTRY_NAME] OS Shell + Utility image registry
+  ## @param caCerts.image.repository [default: REPOSITORY_NAME/os-shell] OS Shell + Utility image repository
+  ## @skip caCerts.image.tag OS Shell + Utility image tag (immutable tags are recommended)
   ## @param caCerts.image.digest OS Shell + Utility image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
   ## @param caCerts.image.pullPolicy OS Shell + Utility image pull policy
   ## @param caCerts.image.pullSecrets OS Shell + Utility image pull secrets
@@ -616,7 +721,7 @@ caCerts:
   image:
     registry: docker.io
     repository: bitnami/os-shell
-    tag: 11-debian-11-r2
+    tag: 12-debian-12-r36
     digest: ""
     pullPolicy: IfNotPresent
     ## Optionally specify an array of imagePullSecrets.
@@ -631,23 +736,51 @@ caCerts:
   ##
   secret: ca-certs-secret
   ## Init container's resource requests and limits
-  ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-  ## @param caCerts.resources.limits The resources limits for the init container
-  ## @param caCerts.resources.requests The requested resources for the init container
+  ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+  ## @param caCerts.resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if caCerts.resources is set (caCerts.resources is recommended for production).
+  ## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
   ##
-  resources:
-    limits: {}
-    requests: {}
+  resourcesPreset: "none"
+  ## @param caCerts.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+  ## Example:
+  ## resources:
+  ##   requests:
+  ##     cpu: 2
+  ##     memory: 512Mi
+  ##   limits:
+  ##     cpu: 3
+  ##     memory: 1024Mi
+  ##
+  resources: {}
   ## Init container Container Security Context
   ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
-  ## @param caCerts.containerSecurityContext.runAsUser Set init container's Security Context runAsUser
+  ## @param caCerts.containerSecurityContext.enabled Enabled containers' Security Context
+  ## @param caCerts.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+  ## @param caCerts.containerSecurityContext.runAsUser Set containers' Security Context runAsUser
+  ## @param caCerts.containerSecurityContext.runAsGroup Set containers' Security Context runAsGroup
+  ## @param caCerts.containerSecurityContext.runAsNonRoot Set container's Security Context runAsNonRoot
+  ## @param caCerts.containerSecurityContext.privileged Set container's Security Context privileged
+  ## @param caCerts.containerSecurityContext.readOnlyRootFilesystem Set container's Security Context readOnlyRootFilesystem
+  ## @param caCerts.containerSecurityContext.allowPrivilegeEscalation Set container's Security Context allowPrivilegeEscalation
+  ## @param caCerts.containerSecurityContext.capabilities.drop List of capabilities to be dropped
+  ## @param caCerts.containerSecurityContext.seccompProfile.type Set container's Security Context seccomp profile
   ## NOTE: when runAsUser is set to special value "auto", init container will try to chown the
   ##   data folder to auto-determined user&group, using commands: `id -u`:`id -G | cut -d" " -f2`
   ##   "auto" is especially useful for OpenShift which has scc with dynamic user ids (and 0 is not allowed)
   ##
   containerSecurityContext:
-    runAsUser: 0
-
+    enabled: true
+    seLinuxOptions: {}
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    privileged: false
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: "RuntimeDefault"
 ## @section SonarQube plugin provisioning parameters
 ##
 plugins:
@@ -667,9 +800,9 @@ plugins:
   noCheckCertificate: true
   ## OS Shell + Utility image
   ## ref: https://hub.docker.com/r/bitnami/os-shell/tags/
-  ## @param plugins.image.registry OS Shell + Utility image registry
-  ## @param plugins.image.repository OS Shell + Utility image repository
-  ## @param plugins.image.tag OS Shell + Utility image tag (immutable tags are recommended)
+  ## @param plugins.image.registry [default: REGISTRY_NAME] OS Shell + Utility image registry
+  ## @param plugins.image.repository [default: REPOSITORY_NAME/os-shell] OS Shell + Utility image repository
+  ## @skip plugins.image.tag OS Shell + Utility image tag (immutable tags are recommended)
   ## @param plugins.image.digest OS Shell + Utility image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
   ## @param plugins.image.pullPolicy OS Shell + Utility image pull policy
   ## @param plugins.image.pullSecrets OS Shell + Utility image pull secrets
@@ -677,7 +810,7 @@ plugins:
   image:
     registry: docker.io
     repository: bitnami/os-shell
-    tag: 11-debian-11-r2
+    tag: 12-debian-12-r36
     digest: ""
     pullPolicy: IfNotPresent
     ## Optionally specify an array of imagePullSecrets.
@@ -689,28 +822,56 @@ plugins:
     ##
     pullSecrets: []
   ## Init container's resource requests and limits
-  ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-  ## @param plugins.resources.limits The resources limits for the init container
-  ## @param plugins.resources.requests The requested resources for the init container
+  ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+  ## @param plugins.resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if plugins.resources is set (plugins.resources is recommended for production).
+  ## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
   ##
-  resources:
-    limits: {}
-    requests: {}
+  resourcesPreset: "none"
+  ## @param plugins.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+  ## Example:
+  ## resources:
+  ##   requests:
+  ##     cpu: 2
+  ##     memory: 512Mi
+  ##   limits:
+  ##     cpu: 3
+  ##     memory: 1024Mi
+  ##
+  resources: {}
   ## Init container Container Security Context
   ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
-  ## @param plugins.containerSecurityContext.runAsUser Set init container's Security Context runAsUser
+  ## @param plugins.containerSecurityContext.enabled Enabled containers' Security Context
+  ## @param plugins.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+  ## @param plugins.containerSecurityContext.runAsUser Set containers' Security Context runAsUser
+  ## @param plugins.containerSecurityContext.runAsGroup Set containers' Security Context runAsGroup
+  ## @param plugins.containerSecurityContext.runAsNonRoot Set container's Security Context runAsNonRoot
+  ## @param plugins.containerSecurityContext.privileged Set container's Security Context privileged
+  ## @param plugins.containerSecurityContext.readOnlyRootFilesystem Set container's Security Context readOnlyRootFilesystem
+  ## @param plugins.containerSecurityContext.allowPrivilegeEscalation Set container's Security Context allowPrivilegeEscalation
+  ## @param plugins.containerSecurityContext.capabilities.drop List of capabilities to be dropped
+  ## @param plugins.containerSecurityContext.seccompProfile.type Set container's Security Context seccomp profile
   ## NOTE: when runAsUser is set to special value "auto", init container will try to chown the
   ##   data folder to auto-determined user&group, using commands: `id -u`:`id -G | cut -d" " -f2`
   ##   "auto" is especially useful for OpenShift which has scc with dynamic user ids (and 0 is not allowed)
   ##
   containerSecurityContext:
-    runAsUser: 0
-
+    enabled: true
+    seLinuxOptions: {}
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    privileged: false
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: "RuntimeDefault"
 ## @section Persistence Parameters
 ##
 
 ## Persistence Parameters
-## ref: https://kubernetes.io/docs/user-guide/persistent-volumes/
+## ref: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
 ##
 persistence:
   ## @param persistence.enabled Enable persistence using Persistent Volume Claims
@@ -748,9 +909,9 @@ volumePermissions:
   enabled: false
   ## OS Shell + Utility image
   ## ref: https://hub.docker.com/r/bitnami/os-shell/tags/
-  ## @param volumePermissions.image.registry OS Shell + Utility image registry
-  ## @param volumePermissions.image.repository OS Shell + Utility image repository
-  ## @param volumePermissions.image.tag OS Shell + Utility image tag (immutable tags are recommended)
+  ## @param volumePermissions.image.registry [default: REGISTRY_NAME] OS Shell + Utility image registry
+  ## @param volumePermissions.image.repository [default: REPOSITORY_NAME/os-shell] OS Shell + Utility image repository
+  ## @skip volumePermissions.image.tag OS Shell + Utility image tag (immutable tags are recommended)
   ## @param volumePermissions.image.digest OS Shell + Utility image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
   ## @param volumePermissions.image.pullPolicy OS Shell + Utility image pull policy
   ## @param volumePermissions.image.pullSecrets OS Shell + Utility image pull secrets
@@ -758,7 +919,7 @@ volumePermissions:
   image:
     registry: docker.io
     repository: bitnami/os-shell
-    tag: 11-debian-11-r2
+    tag: 12-debian-12-r36
     digest: ""
     pullPolicy: IfNotPresent
     ## Optionally specify an array of imagePullSecrets.
@@ -770,23 +931,35 @@ volumePermissions:
     ##
     pullSecrets: []
   ## Init container's resource requests and limits
-  ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-  ## @param volumePermissions.resources.limits The resources limits for the init container
-  ## @param volumePermissions.resources.requests The requested resources for the init container
+  ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+  ## @param volumePermissions.resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if volumePermissions.resources is set (volumePermissions.resources is recommended for production).
+  ## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
   ##
-  resources:
-    limits: {}
-    requests: {}
+  resourcesPreset: "none"
+  ## @param volumePermissions.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+  ## Example:
+  ## resources:
+  ##   requests:
+  ##     cpu: 2
+  ##     memory: 512Mi
+  ##   limits:
+  ##     cpu: 3
+  ##     memory: 1024Mi
+  ##
+  resources: {}
   ## Init container Container Security Context
   ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+  ## @param volumePermissions.containerSecurityContext.enabled Enable init container's Security Context
+  ## @param volumePermissions.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
   ## @param volumePermissions.containerSecurityContext.runAsUser Set init container's Security Context runAsUser
   ## NOTE: when runAsUser is set to special value "auto", init container will try to chown the
   ##   data folder to auto-determined user&group, using commands: `id -u`:`id -G | cut -d" " -f2`
   ##   "auto" is especially useful for OpenShift which has scc with dynamic user ids (and 0 is not allowed)
   ##
   containerSecurityContext:
+    enabled: true
+    seLinuxOptions: {}
     runAsUser: 0
-
 ## @section Sysctl Image parameters
 ##
 
@@ -798,9 +971,9 @@ sysctl:
   enabled: true
   ## OS Shell + Utility image
   ## ref: https://hub.docker.com/r/bitnami/os-shell/tags/
-  ## @param sysctl.image.registry OS Shell + Utility image registry
-  ## @param sysctl.image.repository OS Shell + Utility image repository
-  ## @param sysctl.image.tag OS Shell + Utility image tag (immutable tags are recommended)
+  ## @param sysctl.image.registry [default: REGISTRY_NAME] OS Shell + Utility image registry
+  ## @param sysctl.image.repository [default: REPOSITORY_NAME/os-shell] OS Shell + Utility image repository
+  ## @skip sysctl.image.tag OS Shell + Utility image tag (immutable tags are recommended)
   ## @param sysctl.image.digest OS Shell + Utility image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
   ## @param sysctl.image.pullPolicy OS Shell + Utility image pull policy
   ## @param sysctl.image.pullSecrets OS Shell + Utility image pull secrets
@@ -808,7 +981,7 @@ sysctl:
   image:
     registry: docker.io
     repository: bitnami/os-shell
-    tag: 11-debian-11-r2
+    tag: 12-debian-12-r36
     digest: ""
     pullPolicy: IfNotPresent
     ## Optionally specify an array of imagePullSecrets.
@@ -820,14 +993,35 @@ sysctl:
     ##
     pullSecrets: []
   ## Init container's resource requests and limits
-  ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-  ## @param sysctl.resources.limits The resources limits for the init container
-  ## @param sysctl.resources.requests The requested resources for the init container
+  ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+  ## @param sysctl.resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if sysctl.resources is set (sysctl.resources is recommended for production).
+  ## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
   ##
-  resources:
-    limits: {}
-    requests: {}
-
+  resourcesPreset: "none"
+  ## @param sysctl.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+  ## Example:
+  ## resources:
+  ##   requests:
+  ##     cpu: 2
+  ##     memory: 512Mi
+  ##   limits:
+  ##     cpu: 3
+  ##     memory: 1024Mi
+  ##
+  resources: {}
+  ## @param sysctl.containerSecurityContext.enabled Enable container security context
+  ## @param sysctl.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+  ## @param sysctl.containerSecurityContext.runAsUser Set init container's Security Context runAsUser
+  ## @param sysctl.containerSecurityContext.privileged Set init container's Security Context privileged
+  ## NOTE: when runAsUser is set to special value "auto", init container will try to chown the
+  ##   data folder to auto-determined user&group, using commands: `id -u`:`id -G | cut -d" " -f2`
+  ##   "auto" is especially useful for OpenShift which has scc with dynamic user ids (and 0 is not allowed)
+  ##
+  containerSecurityContext:
+    enabled: true
+    privileged: true
+    runAsUser: 0
+    seLinuxOptions: {}
 ## @section Other Parameters
 ##
 
@@ -847,7 +1041,7 @@ rbac:
 serviceAccount:
   create: true
   name: ""
-  automountServiceAccountToken: true
+  automountServiceAccountToken: false
   annotations: {}
 ## SonarQube&trade; Autoscaling configuration
 ## ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
@@ -863,7 +1057,6 @@ autoscaling:
   maxReplicas: 11
   targetCPU: 50
   targetMemory: 50
-
 ## @section Metrics parameters
 ##
 
@@ -878,9 +1071,9 @@ metrics:
     enabled: false
     ## Bitnami JMX exporter image
     ## ref: https://hub.docker.com/r/bitnami/jmx-exporter/tags/
-    ## @param metrics.jmx.image.registry JMX exporter image registry
-    ## @param metrics.jmx.image.repository JMX exporter image repository
-    ## @param metrics.jmx.image.tag JMX exporter image tag (immutable tags are recommended)
+    ## @param metrics.jmx.image.registry [default: REGISTRY_NAME] JMX exporter image registry
+    ## @param metrics.jmx.image.repository [default: REPOSITORY_NAME/jmx-exporter] JMX exporter image repository
+    ## @skip metrics.jmx.image.tag JMX exporter image tag (immutable tags are recommended)
     ## @param metrics.jmx.image.digest JMX exporter image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
     ## @param metrics.jmx.image.pullPolicy JMX exporter image pull policy
     ## @param metrics.jmx.image.pullSecrets Specify docker-registry secret names as an array
@@ -888,7 +1081,7 @@ metrics:
     image:
       registry: docker.io
       repository: bitnami/jmx-exporter
-      tag: 0.19.0-debian-11-r4
+      tag: 1.1.0-debian-12-r3
       digest: ""
       pullPolicy: IfNotPresent
       ## Optionally specify an array of imagePullSecrets.
@@ -904,23 +1097,80 @@ metrics:
     containerPorts:
       metrics: 10445
     ## Prometheus JMX Exporter' resource requests and limits
-    ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
-    ## @param metrics.jmx.resources.limits The resources limits for the init container
-    ## @param metrics.jmx.resources.requests The requested resources for the init container
+    ## ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+    ## @param metrics.jmx.resourcesPreset Set container resources according to one common preset (allowed values: none, nano, micro, small, medium, large, xlarge, 2xlarge). This is ignored if metrics.jmx.resources is set (metrics.jmx.resources is recommended for production).
+    ## More information: https://github.com/bitnami/charts/blob/main/bitnami/common/templates/_resources.tpl#L15
     ##
-    resources:
-      limits: {}
-      requests: {}
+    resourcesPreset: "none"
+    ## @param metrics.jmx.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+    ## Example:
+    ## resources:
+    ##   requests:
+    ##     cpu: 2
+    ##     memory: 512Mi
+    ##   limits:
+    ##     cpu: 3
+    ##     memory: 1024Mi
+    ##
+    resources: {}
+    ## Configure extra options for liveness probe
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/#configure-probes
+    ## @param metrics.jmx.livenessProbe.enabled Enable livenessProbe
+    ## @param metrics.jmx.livenessProbe.initialDelaySeconds Initial delay seconds for livenessProbe
+    ## @param metrics.jmx.livenessProbe.periodSeconds Period seconds for livenessProbe
+    ## @param metrics.jmx.livenessProbe.timeoutSeconds Timeout seconds for livenessProbe
+    ## @param metrics.jmx.livenessProbe.failureThreshold Failure threshold for livenessProbe
+    ## @param metrics.jmx.livenessProbe.successThreshold Success threshold for livenessProbe
+    ##
+    livenessProbe:
+      enabled: true
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+    ## Configure extra options for readiness probe
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/#configure-probes
+    ## @param metrics.jmx.readinessProbe.enabled Enable readinessProbe
+    ## @param metrics.jmx.readinessProbe.initialDelaySeconds Initial delay seconds for readinessProbe
+    ## @param metrics.jmx.readinessProbe.periodSeconds Period seconds for readinessProbe
+    ## @param metrics.jmx.readinessProbe.timeoutSeconds Timeout seconds for readinessProbe
+    ## @param metrics.jmx.readinessProbe.failureThreshold Failure threshold for readinessProbe
+    ## @param metrics.jmx.readinessProbe.successThreshold Success threshold for readinessProbe
+    ##
+    readinessProbe:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
     ## Configure Container Security Context
     ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
-    ## @param metrics.jmx.containerSecurityContext.enabled Enabled JMX Exporter containers' Security Context
-    ## @param metrics.jmx.containerSecurityContext.runAsUser Set JMX Exporter containers' Security Context runAsUser
-    ## @param metrics.jmx.containerSecurityContext.runAsNonRoot Set JMX Exporter containers' Security Context runAsNonRoot
+    ## @param metrics.jmx.containerSecurityContext.enabled Enabled containers' Security Context
+    ## @param metrics.jmx.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+    ## @param metrics.jmx.containerSecurityContext.runAsUser Set containers' Security Context runAsUser
+    ## @param metrics.jmx.containerSecurityContext.runAsGroup Set containers' Security Context runAsGroup
+    ## @param metrics.jmx.containerSecurityContext.runAsNonRoot Set container's Security Context runAsNonRoot
+    ## @param metrics.jmx.containerSecurityContext.privileged Set container's Security Context privileged
+    ## @param metrics.jmx.containerSecurityContext.readOnlyRootFilesystem Set container's Security Context readOnlyRootFilesystem
+    ## @param metrics.jmx.containerSecurityContext.allowPrivilegeEscalation Set container's Security Context allowPrivilegeEscalation
+    ## @param metrics.jmx.containerSecurityContext.capabilities.drop List of capabilities to be dropped
+    ## @param metrics.jmx.containerSecurityContext.seccompProfile.type Set container's Security Context seccomp profile
     ##
     containerSecurityContext:
       enabled: true
+      seLinuxOptions: {}
       runAsUser: 1001
+      runAsGroup: 1001
       runAsNonRoot: true
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: "RuntimeDefault"
     ## @param metrics.jmx.whitelistObjectNames [array] Allows setting which JMX objects you want to expose to via JMX stats to JMX Exporter
     ## Only whitelisted values will be exposed via JMX Exporter. They must also be exposed via Rules. To expose all metrics
     ## (warning its crazy excessive and they aren't formatted in a prometheus style) (1) `whitelistObjectNames: []`
@@ -1000,7 +1250,6 @@ metrics:
     ## ref: https://github.com/bitnami/charts/tree/main/bitnami/prometheus-operator#prometheus-configuration
     ##
     selector: {}
-
 ## @section PostgreSQL subchart settings
 ##
 
@@ -1061,7 +1310,6 @@ postgresql:
       ## @param postgresql.primary.persistence.size PVC Storage Request for PostgreSQL volume
       ##
       size: 8Gi
-
 ## @section External Database settings
 ##
 

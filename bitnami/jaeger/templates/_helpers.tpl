@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -29,12 +29,28 @@ Create the name of the query deployment
 {{- end -}}
 
 {{/*
+Create the name of the query deployment
+*/}}
+{{- define "jaeger.cassandra.fullname" -}}
+{{- include "common.names.dependency.fullname" (dict "chartName" "cassandra" "chartValues" .Values.cassandra "context" $) -}}
+{{- end -}}
+
+{{/*
+Return the proper Docker Image Registry Secret Names
+*/}}
+{{- define "jaeger.imagePullSecrets" -}}
+{{ include "common.images.renderPullSecrets" (dict "images" (list .Values.image .Values.cqlshImage) "context" $) }}
+{{- end -}}
+
+{{/*
 Create a container for checking cassandra availability
 */}}
 {{- define "jaeger.waitForDBInitContainer" -}}
+{{- $context := .context }}
+{{- $block := index .context.Values .component }}
 - name: jaeger-cassandra-ready-check
-  image: {{ include "jaeger.cqlshImage" . }}
-  imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
+  image: {{ include "jaeger.cqlshImage" .context }}
+  imagePullPolicy: {{ .context.Values.image.pullPolicy | quote }}
   command:
     - /bin/bash
   args:
@@ -49,7 +65,7 @@ Create a container for checking cassandra availability
       . /opt/bitnami/scripts/libos.sh
 
       check_cassandra_keyspace_schema() {
-          echo "SELECT 1" | cqlsh -u $CASSANDRA_USERNAME -p $CASSANDRA_PASSWORD -e "SELECT COUNT(*) FROM ${CASSANDRA_KEYSPACE}.traces"
+          echo "SELECT 1" | cqlsh -u $CASSANDRA_USERNAME -p $CASSANDRA_PASSWORD -e "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='${CASSANDRA_KEYSPACE}';"
       }
 
       info "Connecting to the Cassandra instance $CQLSH_HOST:$CQLSH_PORT"
@@ -61,20 +77,28 @@ Create a container for checking cassandra availability
       fi
   env:
     - name: CQLSH_HOST
-      value: {{ include "jaeger.cassandra.host" . }}
+      value: {{ include "jaeger.cassandra.host" .context }}
     - name: BITNAMI_DEBUG
-      value: {{ ternary "true" "false" .Values.cqlshImage.debug | quote }}
+      value: {{ ternary "true" "false" .context.Values.cqlshImage.debug | quote }}
     - name: CQLSH_PORT
-      value: {{ include "jaeger.cassandra.port" . }}
+      value: {{ include "jaeger.cassandra.port" .context }}
     - name: CASSANDRA_USERNAME
-      value: {{ include "jaeger.cassandra.user" . }}
+      value: {{ include "jaeger.cassandra.user" .context }}
     - name: CASSANDRA_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: {{ include "jaeger.cassandra.secretName" . }}
-          key: {{ include "jaeger.cassandra.secretKey" . }}
+          name: {{ include "jaeger.cassandra.secretName" .context }}
+          key: {{ include "jaeger.cassandra.secretKey" .context }}
     - name: CASSANDRA_KEYSPACE
-      value: {{ .Values.cassandra.keyspace }}
+      value: {{ .context.Values.cassandra.keyspace }}
+  {{- if $block.containerSecurityContext.enabled }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $block.containerSecurityContext "context" .context) | nindent 4 }}
+  {{- end }}
+  {{- if .context.Values.cqlshImage.resources }}
+  resources: {{- toYaml .context.Values.cqlshImage.resources | nindent 4 }}
+  {{- else if ne .context.Values.cqlshImage.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .context.Values.cqlshImage.resourcesPreset) | nindent 4 }}
+  {{- end }}
 {{- end -}}
 
 {{/*
@@ -88,16 +112,6 @@ Create the name of the service account to use for the collector
 {{- end -}}
 {{- end -}}
 
-{{/*
-Create the name of the service account to use for the agent
-*/}}
-{{- define "jaeger.agent.serviceAccountName" -}}
-{{- if .Values.agent.serviceAccount.create -}}
-    {{ default (include "jaeger.agent.fullname" .) .Values.agent.serviceAccount.name }}
-{{- else -}}
-    {{ default "default" .Values.agent.serviceAccount.name }}
-{{- end -}}
-{{- end -}}
 
 {{/*
 Create the name of the service account to use for the query
@@ -118,22 +132,13 @@ Create the name of the collector deployment
 {{- end -}}
 
 {{/*
-Create the name of the collector deployment. This name includes 2 hyphens due to
-an issue about env vars collision with the chart name when the release name is set to just 'jaeger'
-ref. https://github.com/jaegertracing/jaeger-operator/issues/1158
-*/}}
-{{- define "jaeger.agent.fullname" -}}
-    {{ printf "%s--agent" (include "common.names.fullname" .) }}
-{{- end -}}
-
-{{/*
 Create the cassandra secret name
 */}}
 {{- define "jaeger.cassandra.secretName" -}}
     {{- if not .Values.cassandra.enabled -}}
-        {{- .Values.externalDatabase.existingSecret -}}
+        {{- tpl .Values.externalDatabase.existingSecret $ -}}
     {{- else -}}
-        {{- printf "%s-cassandra" (include "common.names.fullname" .) -}}
+        {{- default (include "jaeger.cassandra.fullname" .) .Values.cassandra.dbUser.existingSecret -}}
     {{- end -}}
 {{- end -}}
 

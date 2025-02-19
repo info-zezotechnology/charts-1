@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -9,12 +9,9 @@ kind: Deployment
 metadata:
   name: {{ template "mastodon.sidekiq.fullname" . }}
   namespace: {{ include "common.names.namespace" . | quote }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: mastodon
     app.kubernetes.io/component: sidekiq
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -23,22 +20,21 @@ spec:
   {{- if .Values.sidekiq.updateStrategy }}
   strategy: {{- toYaml .Values.sidekiq.updateStrategy | nindent 4 }}
   {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.sidekiq.podLabels .Values.commonLabels ) "context" . ) }}
   selector:
-    matchLabels: {{- include "common.labels.matchLabels" . | nindent 6 }}
+    matchLabels: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 6 }}
       app.kubernetes.io/component: sidekiq
   template:
     metadata:
       {{- if .Values.sidekiq.podAnnotations }}
       annotations: {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.podAnnotations "context" $) | nindent 8 }}
       {{- end }}
-      labels: {{- include "common.labels.standard" . | nindent 8 }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
         app.kubernetes.io/component: sidekiq
-        {{- if .Values.sidekiq.podLabels }}
-        {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.podLabels "context" $) | nindent 8 }}
-        {{- end }}
     spec:
       serviceAccountName: {{ template "mastodon.serviceAccountName" . }}
       {{- include "mastodon.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: {{ .Values.sidekiq.automountServiceAccountToken }}
       {{- if .Values.sidekiq.hostAliases }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.hostAliases "context" $) | nindent 8 }}
       {{- end }}
@@ -46,8 +42,8 @@ spec:
       affinity: {{- include "common.tplvalues.render" ( dict "value" .Values.sidekiq.affinity "context" $) | nindent 8 }}
       {{- else }}
       affinity:
-        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.sidekiq.podAffinityPreset "component" "sidekiq" "context" $) | nindent 10 }}
-        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.sidekiq.podAntiAffinityPreset "component" "sidekiq" "context" $) | nindent 10 }}
+        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.sidekiq.podAffinityPreset "component" "sidekiq" "customLabels" $podLabels "context" $) | nindent 10 }}
+        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.sidekiq.podAntiAffinityPreset "component" "sidekiq" "customLabels" $podLabels "context" $) | nindent 10 }}
         nodeAffinity: {{- include "common.affinities.nodes" (dict "type" .Values.sidekiq.nodeAffinityPreset.type "key" .Values.sidekiq.nodeAffinityPreset.key "values" .Values.sidekiq.nodeAffinityPreset.values) | nindent 10 }}
       {{- end }}
       {{- if .Values.sidekiq.nodeSelector }}
@@ -66,16 +62,18 @@ spec:
       topologySpreadConstraints: {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.topologySpreadConstraints "context" .) | nindent 8 }}
       {{- end }}
       {{- if .Values.sidekiq.podSecurityContext.enabled }}
-      securityContext: {{- omit .Values.sidekiq.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.sidekiq.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
       {{- if .Values.sidekiq.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ .Values.sidekiq.terminationGracePeriodSeconds }}
       {{- end }}
       initContainers:
         {{- if not .Values.diagnosticMode.enabled }}
+        {{- if .Values.defaultInitContainers.waitForBackends.enabled }}
         {{- include "mastodon.waitForWebInitContainer" . | nindent 8 }}
         {{- if .Values.enableS3 }}
         {{- include "mastodon.waitForS3InitContainer" . | nindent 8 }}
+        {{- end }}
         {{- end }}
         {{- end }}
         {{- if .Values.sidekiq.initContainers }}
@@ -86,7 +84,7 @@ spec:
           image: {{ template "mastodon.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Values.sidekiq.containerSecurityContext.enabled }}
-          securityContext: {{- omit .Values.sidekiq.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.sidekiq.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           {{- if .Values.diagnosticMode.enabled }}
           command: {{- include "common.tplvalues.render" (dict "value" .Values.diagnosticMode.command "context" $) | nindent 12 }}
@@ -175,6 +173,8 @@ spec:
             {{- end }}
           {{- if .Values.sidekiq.resources }}
           resources: {{- toYaml .Values.sidekiq.resources | nindent 12 }}
+          {{- else if ne .Values.sidekiq.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" .Values.sidekiq.resourcesPreset) | nindent 12 }}
           {{- end }}
           {{- if not .Values.diagnosticMode.enabled }}
           {{- if .Values.sidekiq.customLivenessProbe }}
@@ -183,9 +183,9 @@ spec:
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.sidekiq.livenessProbe "enabled") "context" $) | nindent 12 }}
             exec:
               command:
-                - /bin/sh
-                - -c
-                - pgrep -f ^sidekiq
+                - pgrep
+                - -f
+                - sidekiq
           {{- end }}
           {{- if .Values.sidekiq.customReadinessProbe }}
           readinessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.customReadinessProbe "context" $) | nindent 12 }}
@@ -212,6 +212,9 @@ spec:
           lifecycle: {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
           volumeMounts:
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
           {{- if not .Values.enableS3 }}
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
@@ -223,16 +226,19 @@ spec:
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidekiq.sidecars "context" $) | nindent 8 }}
         {{- end }}
       volumes:
+        - name: empty-dir
+          emptyDir:
+            medium: Memory
         {{- if not .Values.enableS3 }}
-          - name: data
-            {{- if .Values.persistence.enabled }}
-            persistentVolumeClaim:
-              claimName: {{ include "mastodon.pvc" . }}
-            {{- else }}
-            emptyDir: {}
-            {{- end }}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mastodon.pvc" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         {{- end }}
         {{- if .Values.sidekiq.extraVolumes }}
-        {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.extraVolumes "context" $) | nindent 8 }}
+        {{- include "common.tplvalues.render" (dict "value" .Values.sidekiq.extraVolumes "context" $) | nindent 10 }}
         {{- end }}
 {{- end }}

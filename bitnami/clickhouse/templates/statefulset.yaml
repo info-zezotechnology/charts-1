@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -10,19 +10,18 @@ kind: StatefulSet
 metadata:
   name: {{ printf "%s-shard%d" (include "common.names.fullname" $ ) $i }}
   namespace: {{ include "common.names.namespace" $ | quote }}
-  labels: {{- include "common.labels.standard" $ | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $.Values.commonLabels "context" $ ) | nindent 4 }}
     app.kubernetes.io/component: clickhouse
-    {{- if $.Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" $.Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
+    shard: {{ $i | quote }}
   {{- if $.Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" $.Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
 spec:
   replicas: {{ $.Values.replicaCount }}
   podManagementPolicy: {{ $.Values.podManagementPolicy | quote }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list $.Values.podLabels $.Values.commonLabels ) "context" $ ) }}
   selector:
-    matchLabels: {{ include "common.labels.matchLabels" $ | nindent 6 }}
+    matchLabels: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 6 }}
       app.kubernetes.io/component: clickhouse
   serviceName: {{ printf "%s-headless" (include "common.names.fullname" $) }}
   {{- if $.Values.updateStrategy }}
@@ -40,14 +39,13 @@ spec:
         {{- if and $.Values.metrics.enabled $.Values.metrics.podAnnotations }}
         {{- include "common.tplvalues.render" (dict "value" $.Values.metrics.podAnnotations "context" $) | nindent 8 }}
         {{- end }}
-      labels: {{- include "common.labels.standard" $ | nindent 8 }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
         app.kubernetes.io/component: clickhouse
-        {{- if $.Values.podLabels }}
-        {{- include "common.tplvalues.render" (dict "value" $.Values.podLabels "context" $) | nindent 8 }}
-        {{- end }}
+        shard: {{ $i | quote }}
     spec:
       serviceAccountName: {{ template "clickhouse.serviceAccountName" $ }}
       {{- include "clickhouse.imagePullSecrets" $ | nindent 6 }}
+      automountServiceAccountToken: {{ $.Values.automountServiceAccountToken }}
       {{- if $.Values.hostAliases }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" $.Values.hostAliases "context" $) | nindent 8 }}
       {{- end }}
@@ -55,8 +53,8 @@ spec:
       affinity: {{- include "common.tplvalues.render" ( dict "value" $.Values.affinity "context" $) | nindent 8 }}
       {{- else }}
       affinity:
-        podAffinity: {{- include "common.affinities.pods" (dict "type" $.Values.podAffinityPreset "component" "clickhouse" "context" $) | nindent 10 }}
-        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" $.Values.podAntiAffinityPreset "component" "clickhouse" "context" $) | nindent 10 }}
+        podAffinity: {{- include "common.affinities.pods" (dict "type" $.Values.podAffinityPreset "component" "clickhouse" "customLabels" $podLabels "context" $) | nindent 10 }}
+        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" $.Values.podAntiAffinityPreset "component" "clickhouse" "customLabels" $podLabels "extraPodAffinityTerms" (ternary (list (dict "extraMatchLabels" (dict "shard" $i) "topologyKey" "topology.kubernetes.io/zone")) (list) $.Values.distributeReplicasByZone) "context" $) | nindent 10 }}
         nodeAffinity: {{- include "common.affinities.nodes" (dict "type" $.Values.nodeAffinityPreset.type "key" $.Values.nodeAffinityPreset.key "values" $.Values.nodeAffinityPreset.values) | nindent 10 }}
       {{- end }}
       {{- if $.Values.nodeSelector }}
@@ -75,7 +73,7 @@ spec:
       topologySpreadConstraints: {{- include "common.tplvalues.render" (dict "value" $.Values.topologySpreadConstraints "context" $) | nindent 8 }}
       {{- end }}
       {{- if $.Values.podSecurityContext.enabled }}
-      securityContext: {{- omit $.Values.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $.Values.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
       {{- if $.Values.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ $.Values.terminationGracePeriodSeconds }}
@@ -87,10 +85,12 @@ spec:
           imagePullPolicy: {{ $.Values.volumePermissions.image.pullPolicy | quote }}
           {{- if $.Values.resources }}
           resources: {{- toYaml $.Values.resources | nindent 12 }}
+          {{- else if ne $.Values.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" $.Values.resourcesPreset) | nindent 12 }}
           {{- end }}
           {{- if $.Values.containerSecurityContext.enabled }}
           # We don't require a privileged container in this case
-          securityContext: {{- omit $.Values.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $.Values.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           command:
             - /bin/sh
@@ -103,6 +103,9 @@ spec:
               mountPath: /tmp/certs
             - name: clickhouse-certificates
               mountPath: /opt/bitnami/clickhouse/certs
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
         {{- else if and $.Values.volumePermissions.enabled $.Values.persistence.enabled }}
         - name: volume-permissions
           image: {{ include "clickhouse.volumePermissions.image" $ }}
@@ -132,10 +135,15 @@ spec:
           securityContext: {{- include "common.tplvalues.render" (dict "value" $.Values.volumePermissions.containerSecurityContext "context" $) | nindent 12 }}
           {{- if $.Values.volumePermissions.resources }}
           resources: {{- toYaml $.Values.volumePermissions.resources | nindent 12 }}
+          {{- else if ne $.Values.volumePermissions.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" $.Values.volumePermissions.resourcesPreset) | nindent 12 }}
           {{- end }}
           volumeMounts:
             - name: data
               mountPath: /bitnami/clickhouse
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
             {{- if $.Values.tls.enabled }}
             - name: raw-certificates
               mountPath: /tmp/certs
@@ -151,7 +159,7 @@ spec:
           image: {{ template "clickhouse.image" $ }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           {{- if $.Values.containerSecurityContext.enabled }}
-          securityContext: {{- omit $.Values.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $.Values.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           {{- if $.Values.diagnosticMode.enabled }}
           command: {{- include "common.tplvalues.render" (dict "value" $.Values.diagnosticMode.command "context" $) | nindent 12 }}
@@ -244,6 +252,8 @@ spec:
             {{- end }}
           {{- if $.Values.resources }}
           resources: {{- toYaml $.Values.resources | nindent 12 }}
+          {{- else if ne $.Values.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" $.Values.resourcesPreset) | nindent 12 }}
           {{- end }}
           ports:
             - name: http
@@ -281,8 +291,7 @@ spec:
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" $.Values.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if $.Values.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit $.Values.livenessProbe "enabled") "context" $) | nindent 12 }}
-            httpGet:
-              path: /ping
+            tcpSocket:
               port: http
           {{- end }}
           {{- if $.Values.customReadinessProbe }}
@@ -306,6 +315,18 @@ spec:
           lifecycle: {{- include "common.tplvalues.render" (dict "value" $.Values.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
           volumeMounts:
+            - name: empty-dir
+              mountPath: /opt/bitnami/clickhouse/etc
+              subPath: app-conf-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/clickhouse/logs
+              subPath: app-logs-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/clickhouse/tmp
+              subPath: app-tmp-dir
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
             - name: scripts
               mountPath: /scripts/setup.sh
               subPath: setup.sh
@@ -352,6 +373,8 @@ spec:
           configMap:
             name: {{ printf "%s-scripts" (include "common.names.fullname" $) }}
             defaultMode: 0755
+        - name: empty-dir
+          emptyDir: {}
         - name: config
           configMap:
             name: {{ template "clickhouse.configmapName" $ }}
@@ -388,6 +411,10 @@ spec:
         {{- if not $.Values.persistence.enabled }}
         - name: data
           emptyDir: {}
+        {{- else if $.Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ tpl $.Values.persistence.existingClaim $ }}
         {{- end }}
         {{- if  $.Values.tls.enabled }}
         - name: raw-certificates
@@ -399,25 +426,20 @@ spec:
         {{- if $.Values.extraVolumes }}
         {{- include "common.tplvalues.render" (dict "value" $.Values.extraVolumes "context" $) | nindent 8 }}
         {{- end }}
-  {{- if $.Values.persistence.enabled }}
+  {{- if or $.Values.extraVolumeClaimTemplates (and $.Values.persistence.enabled (not $.Values.persistence.existingClaim)) }}
   volumeClaimTemplates:
-    - metadata:
+    {{- if and $.Values.persistence.enabled (not $.Values.persistence.existingClaim) }}    
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: data
-        annotations:
-          {{- if $.Values.persistence.annotations }}
-          {{- include "common.tplvalues.render" (dict "value" $.Values.persistence.annotations "context" $) | nindent 10 }}
-          {{- end }}
-          {{- if $.Values.commonAnnotations }}
-          {{- include "common.tplvalues.render" (dict "value" $.Values.commonAnnotations "context" $) | nindent 10 }}
-          {{- end }}
-        labels: {{- include "common.labels.standard" $ | nindent 10 }}
+        {{- if or $.Values.persistence.annotations $.Values.commonAnnotations }}
+        {{- $claimAnnotations := include "common.tplvalues.merge" ( dict "values" ( list $.Values.persistence.annotations $.Values.commonLabels ) "context" $ ) }}
+        annotations: {{- include "common.tplvalues.render" ( dict "value" $claimAnnotations "context" $ ) | nindent 10 }}
+        {{- end }}
+        {{- $claimLabels := include "common.tplvalues.merge" ( dict "values" ( list $.Values.persistence.labels $.Values.commonLabels ) "context" $ ) }}
+        labels: {{- include "common.labels.matchLabels" ( dict "customLabels" $claimLabels "context" $ ) | nindent 10 }}
           app.kubernetes.io/component: clickhouse
-          {{- if $.Values.commonLabels }}
-          {{- include "common.tplvalues.render" (dict "value" $.Values.commonLabels "context" $) | nindent 10 }}
-          {{- end }}
-          {{- if $.Values.persistence.labels }}
-          {{- include "common.tplvalues.render" (dict "value" $.Values.persistence.labels "context" $) | nindent 10 }}
-          {{- end }}
       spec:
         accessModes:
         {{- range $.Values.persistence.accessModes }}
@@ -433,6 +455,10 @@ spec:
         dataSource: {{- include "common.tplvalues.render" (dict "value" $.Values.persistence.dataSource "context" $) | nindent 10 }}
         {{- end }}
         {{- include "common.storage.class" (dict "persistence" $.Values.persistence "global" $.Values.global) | nindent 8 }}
+    {{- end }}
+    {{- if $.Values.extraVolumeClaimTemplates }}
+    {{- include "common.tplvalues.render" ( dict "value" $.Values.extraVolumeClaimTemplates "context" $) | nindent 4 }}
+    {{- end }}
   {{- end }}
 ---
 {{- end }}

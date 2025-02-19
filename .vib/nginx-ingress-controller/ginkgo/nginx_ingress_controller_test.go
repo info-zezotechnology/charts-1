@@ -1,4 +1,4 @@
-// Copyright VMware, Inc.
+// Copyright Broadcom, Inc. All Rights Reserved.
 // SPDX-License-Identifier: APACHE-2.0
 
 package integration
@@ -69,7 +69,7 @@ var _ = Describe("NGINX Ingress Controller:", func() {
 
 		It("the host resolves to the testing deployment", func() {
 			responseBody := getResponseBodyOrDie(ctx, "http://"+ingressHost)
-			Expect(containsString(responseBody, "kuard")).To(BeTrue())
+			Expect(containsString(responseBody, "dokuwiki")).To(BeTrue())
 		})
 	})
 })

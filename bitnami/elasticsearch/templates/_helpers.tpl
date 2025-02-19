@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -16,7 +16,7 @@ Return the proper ES image name
 Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "elasticsearch.imagePullSecrets" -}}
-{{ include "common.images.pullSecrets" (dict "images" (list .Values.image .Values.metrics.image .Values.sysctlImage .Values.volumePermissions.image) "global" .Values.global) }}
+{{ include "common.images.renderPullSecrets" (dict "images" (list .Values.image .Values.copyTlsCerts.image .Values.metrics.image .Values.sysctlImage .Values.volumePermissions.image) "context" $) }}
 {{- end -}}
 
 {{/*
@@ -40,6 +40,12 @@ Return the proper image name (for the init container volume-permissions image)
 {{ include "common.images.image" (dict "imageRoot" .Values.volumePermissions.image "global" .Values.global) }}
 {{- end -}}
 
+{{/*
+Return the proper Copy TLS Certificates image name
+*/}}
+{{- define "elasticsearch.copyTlsCerts.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.copyTlsCerts.image "global" .Values.global) }}
+{{- end -}}
 
 {{/*
 Name for the Elasticsearch service
@@ -221,6 +227,15 @@ Returns true if at least one ingest-only node replica has been configured.
 {{- end -}}
 
 {{/*
+Returns true if only one master node replica has been configured to assume all the roles
+*/}}
+{{- define "elasticsearch.singleNode.enabled" -}}
+{{- if and (eq (int .Values.master.replicaCount) 1) (not (or .Values.master.masterOnly .Values.master.autoscaling.enabled (include "elasticsearch.data.enabled" .) (include "elasticsearch.coordinating.enabled" .) (include "elasticsearch.ingest.enabled" .))) -}}
+    {{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Return the hostname of every ElasticSearch seed node
 */}}
 {{- define "elasticsearch.hosts" -}}
@@ -309,6 +324,17 @@ Get the initialization scripts Secret name.
     {{ default (include "elasticsearch.ingest.fullname" .) .Values.ingest.serviceAccount.name }}
 {{- else -}}
     {{ default "default" .Values.ingest.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+ Create the name of the metrics service account to use
+ */}}
+{{- define "elasticsearch.metrics.serviceAccountName" -}}
+{{- if .Values.metrics.serviceAccount.create -}}
+    {{ default (include "elasticsearch.metrics.fullname" .) .Values.metrics.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.metrics.serviceAccount.name }}
 {{- end -}}
 {{- end -}}
 

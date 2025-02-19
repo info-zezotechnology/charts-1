@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -43,7 +43,7 @@ Return the proper image name (for the init container volume-permissions image)
 Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "moodle.imagePullSecrets" -}}
-{{- include "common.images.pullSecrets" (dict "images" (list .Values.image .Values.metrics.image .Values.volumePermissions.image .Values.certificates.image) "global" .Values.global) -}}
+{{- include "common.images.renderPullSecrets" ( dict "images" (list .Values.image .Values.metrics.image .Values.volumePermissions.image .Values.certificates.image) "context" $ ) -}}
 {{- end -}}
 
 {{/*
@@ -51,6 +51,17 @@ Return  the proper Storage Class
 */}}
 {{- define "moodle.storageClass" -}}
 {{- include "common.storage.class" (dict "persistence" .Values.persistence "global" .Values.global) -}}
+{{- end -}}
+
+{{/*
+ Create the name of the service account to use
+ */}}
+{{- define "moodle.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+    {{ default (include "common.names.fullname" .) .Values.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.serviceAccount.name }}
+{{- end -}}
 {{- end -}}
 
 {{/*

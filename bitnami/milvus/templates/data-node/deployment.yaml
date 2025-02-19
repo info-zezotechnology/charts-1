@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -9,12 +9,9 @@ kind: Deployment
 metadata:
   name: {{ template "milvus.data-node.fullname" . }}
   namespace: {{ include "common.names.namespace" . | quote }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: milvus
     app.kubernetes.io/component: data-node
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -25,8 +22,9 @@ spec:
   {{- if .Values.dataNode.updateStrategy }}
   strategy: {{- toYaml .Values.dataNode.updateStrategy | nindent 4 }}
   {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.dataNode.podLabels .Values.commonLabels ) "context" . ) }}
   selector:
-    matchLabels: {{- include "common.labels.matchLabels" . | nindent 6 }}
+    matchLabels: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 6 }}
       app.kubernetes.io/part-of: milvus
       app.kubernetes.io/component: data-node
   template:
@@ -38,15 +36,16 @@ spec:
         {{- if .Values.dataNode.podAnnotations }}
         {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.podAnnotations "context" $) | nindent 8 }}
         {{- end }}
-      labels: {{- include "common.labels.standard" . | nindent 8 }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
         app.kubernetes.io/part-of: milvus
         app.kubernetes.io/component: data-node
-        {{- if .Values.dataNode.podLabels }}
-        {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.podLabels "context" $) | nindent 8 }}
-        {{- end }}
     spec:
+      {{- if semverCompare ">= 1.13" (include "common.capabilities.kubeVersion" .) }}
+      enableServiceLinks: {{ .Values.enableServiceLinks }}
+      {{- end }}
       serviceAccountName: {{ template "milvus.data-node.serviceAccountName" . }}
       {{- include "milvus.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: {{ .Values.dataNode.automountServiceAccountToken }}
       {{- if .Values.dataNode.hostAliases }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.hostAliases "context" $) | nindent 8 }}
       {{- end }}
@@ -54,8 +53,8 @@ spec:
       affinity: {{- include "common.tplvalues.render" ( dict "value" .Values.dataNode.affinity "context" $) | nindent 8 }}
       {{- else }}
       affinity:
-        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.dataNode.podAffinityPreset "component" "data-node" "context" $) | nindent 10 }}
-        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.dataNode.podAntiAffinityPreset "component" "data-node" "context" $) | nindent 10 }}
+        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.dataNode.podAffinityPreset "component" "data-node" "customLabels" $podLabels "context" $) | nindent 10 }}
+        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.dataNode.podAntiAffinityPreset "component" "data-node" "customLabels" $podLabels "context" $) | nindent 10 }}
         nodeAffinity: {{- include "common.affinities.nodes" (dict "type" .Values.dataNode.nodeAffinityPreset.type "key" .Values.dataNode.nodeAffinityPreset.key "values" .Values.dataNode.nodeAffinityPreset.values) | nindent 10 }}
       {{- end }}
       {{- if .Values.dataNode.nodeSelector }}
@@ -77,7 +76,7 @@ spec:
       schedulerName: {{ .Values.dataNode.schedulerName }}
       {{- end }}
       {{- if .Values.dataNode.podSecurityContext.enabled }}
-      securityContext: {{- omit .Values.dataNode.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.dataNode.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
       initContainers:
         {{- if .Values.dataNode.enableDefaultInitContainers }}
@@ -94,7 +93,7 @@ spec:
           image: {{ template "milvus.image" . }}
           imagePullPolicy: {{ .Values.milvus.image.pullPolicy }}
           {{- if .Values.dataNode.containerSecurityContext.enabled }}
-          securityContext: {{- omit .Values.dataNode.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.dataNode.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           {{- if .Values.diagnosticMode.enabled }}
           command: {{- include "common.tplvalues.render" (dict "value" .Values.diagnosticMode.command "context" $) | nindent 12 }}
@@ -132,14 +131,15 @@ spec:
               name: http-metrics
           {{- if .Values.dataNode.resources }}
           resources: {{- toYaml .Values.dataNode.resources | nindent 12 }}
+          {{- else if ne .Values.dataNode.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" .Values.dataNode.resourcesPreset) | nindent 12 }}
           {{- end }}
           {{- if not .Values.diagnosticMode.enabled }}
           {{- if .Values.dataNode.customLivenessProbe }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if .Values.dataNode.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.dataNode.livenessProbe "enabled") "context" $) | nindent 12 }}
-            httpGet:
-              path: /healthz
+            tcpSocket:
               port: http-metrics
           {{- end }}
           {{- if .Values.dataNode.customReadinessProbe }}
@@ -162,15 +162,34 @@ spec:
           lifecycle: {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: rendered-config
+            - name: empty-dir
               mountPath: /opt/bitnami/milvus/configs
-            - name: tmp
+              subPath: app-rendered-conf-dir
+            - name: empty-dir
               mountPath: /tmp
-            - name: tmp-milvus
+              subPath: tmp-dir
+            - name: empty-dir
               mountPath: /opt/bitnami/milvus/tmp
+              subPath: app-tmp-dir
               # We are using a s3 backend, so this data dir is temporary
-            - name: tmp-data-milvus
+            - name: empty-dir
               mountPath: /bitnami/milvus/data
+              subPath: app-data-dir
+            {{- if and (not .Values.etcd.enabled) .Values.externalEtcd.tls.enabled .Values.externalEtcd.tls.existingSecret }}
+            - name: etcd-client-certs
+              mountPath: /opt/bitnami/milvus/configs/cert/etcd/client
+              readOnly: true
+            {{- end }}
+            {{- if and (not .Values.kafka.enabled) .Values.externalKafka.tls.enabled .Values.externalKafka.tls.existingSecret }}
+            - name: kafka-client-certs
+              mountPath: /opt/bitnami/milvus/configs/cert/kafka/client
+              readOnly: true
+            {{- end }}
+            {{- if and (not .Values.minio.enabled) .Values.externalS3.tls.enabled .Values.externalS3.tls.existingSecret }}
+            - name: minio-client-certs
+              mountPath: /opt/bitnami/milvus/configs/cert/minio/client
+              readOnly: true
+            {{- end }}
           {{- if .Values.dataNode.extraVolumeMounts }}
           {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.extraVolumeMounts "context" $) | nindent 12 }}
           {{- end }}
@@ -178,11 +197,7 @@ spec:
         {{- include "common.tplvalues.render" ( dict "value" .Values.dataNode.sidecars "context" $) | nindent 8 }}
         {{- end }}
       volumes:
-        - name: tmp-data-milvus
-          emptyDir: {}
-        - name: tmp-milvus
-          emptyDir: {}
-        - name: tmp
+        - name: empty-dir
           emptyDir: {}
         - name: config-common
           configMap:
@@ -200,8 +215,24 @@ spec:
           configMap:
             name: {{ template "milvus.data-node.extraConfigmapName" . }}
         {{- end }}
-        - name: rendered-config
-          emptyDir: {}
+        {{- if and (not .Values.etcd.enabled) .Values.externalEtcd.tls.enabled .Values.externalEtcd.tls.existingSecret }}
+        - name: etcd-client-certs
+          secret:
+            secretName: {{ .Values.externalEtcd.tls.existingSecret }}
+            defaultMode: 256
+        {{- end }}
+        {{- if and (not .Values.kafka.enabled) .Values.externalKafka.tls.enabled .Values.externalKafka.tls.existingSecret }}
+        - name: kafka-client-certs
+          secret:
+            secretName: {{ .Values.externalKafka.tls.existingSecret }}
+            defaultMode: 256
+        {{- end }}
+        {{- if and (not .Values.minio.enabled) .Values.externalS3.tls.enabled .Values.externalS3.tls.existingSecret }}
+        - name: minio-client-certs
+          secret:
+            secretName: {{ .Values.externalS3.tls.existingSecret }}
+            defaultMode: 256
+        {{- end }}
         {{- if .Values.dataNode.extraVolumes }}
         {{- include "common.tplvalues.render" (dict "value" .Values.dataNode.extraVolumes "context" $) | nindent 8 }}
         {{- end }}

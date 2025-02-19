@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -489,61 +489,59 @@ Return kafka port
 {{- end -}}
 
 {{/*
-Return the kafka headless service name
+Return the kafka broker-only nodes headless service name
 */}}
-{{- define "milvus.kafka.headlessServiceName" -}}
-{{- printf "%s-headless" (include "milvus.kafka.fullname" .) -}}
+{{- define "milvus.kafka.broker.headlessServiceName" -}}
+{{- printf "%s-broker-headless" (include "milvus.kafka.fullname" .) -}}
+{{- end -}}
+
+{{/*
+Return the kafka controller-eligible nodes headless service name
+*/}}
+{{- define "milvus.kafka.controller.headlessServiceName" -}}
+{{- printf "%s-controller-headless" (include "milvus.kafka.fullname" .) -}}
 {{- end -}}
 
 {{/*
 Return true if kafka authentication is enabled
 */}}
-{{- define "milvus.kafka.authEnabled" }}
-{{- if .Values.kafka.enabled -}}
-    {{- if contains "sasl" .Values.kafka.auth.clientProtocol -}}
-        {{- true -}}
-    {{- end -}}
-{{- else if .Values.externalKafka.servers -}}
-    {{- if or .Values.externalKafka.existingSecret .Values.externalKafka.password -}}
-        {{- true -}}
-    {{- end -}}
-{{- end }}
-{{- end }}
+{{- define "milvus.kafka.authEnabled" -}}
+{{- $protocol := include "milvus.kafka.securityProtocol" . -}}
+{{- if contains "SASL" $protocol -}}
+    {{- true -}}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Return Kafka authentication SASL mechanisms
 */}}
-{{- define "milvus.kafka.saslMechanisms" }}
+{{- define "milvus.kafka.saslMechanisms" -}}
 {{- if .Values.kafka.enabled -}}
-    {{- upper .Values.kafka.auth.sasl.mechanisms -}}
+    {{- print (upper .Values.kafka.sasl.enabledMechanisms) -}}
 {{- else -}}
-    {{- .Values.externalKafka.saslMechanisms -}}
-{{- end }}
-{{- end }}
+    {{- print (upper .Values.externalKafka.sasl.enabledMechanisms) -}}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Return Kafka security protocol
 */}}
-{{- define "milvus.kafka.securityProtocol" }}
+{{- define "milvus.kafka.securityProtocol" -}}
 {{- if .Values.kafka.enabled -}}
-    {{- if eq .Values.kafka.auth.clientProtocol "sasl" -}}
-        {{- print "SASL_PLAINTEXT" -}}
-    {{- else -}}
-        {{- print .Values.kafka.auth.clientProtocol -}}
-    {{- end -}}
+    {{- print (upper .Values.kafka.listeners.client.protocol) -}}
 {{- else -}}
-    {{- print .Values.externalKafka.securityProtocol -}}
-{{- end }}
-{{- end }}
+    {{- print (upper .Values.externalKafka.listener.protocol) -}}
+{{- end -}}
+{{- end -}}
 
 {{/*
 Return kafka credential secret name
 */}}
 {{- define "milvus.kafka.secretName" -}}
 {{- if .Values.kafka.enabled -}}
-    {{- printf "%s-jaas" (include "milvus.kafka.fullname" .) -}}
-{{- else if .Values.externalKafka.existingSecret -}}
-    {{- print .Values.externalKafka.existingSecret -}}
+    {{- printf "%s-user-passwords" (include "milvus.kafka.fullname" .) -}}
+{{- else if .Values.externalKafka.sasl.existingSecret -}}
+    {{- print .Values.externalKafka.sasl.existingSecret -}}
 {{- else -}}
     {{- printf "%s-external-kafka" (include "common.names.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -556,7 +554,7 @@ Return kafka secret password key
 {{- if .Values.kafka.enabled -}}
     {{- print "system-user-password" -}}
 {{- else -}}
-    {{- print .Values.externalKafka.existingSecretPasswordKey -}}
+    {{- print .Values.externalKafka.sasl.existingSecretPasswordKey -}}
 {{- end -}}
 {{- end -}}
 
@@ -565,9 +563,9 @@ Return kafka username
 */}}
 {{- define "milvus.kafka.user" -}}
 {{- if .Values.kafka.enabled -}}
-    {{- print (index .Values.kafka.auth.sasl.jaas.clientUsers 0) -}}
+    {{- print (index .Values.kafka.sasl.client.users 0) -}}
 {{- else -}}
-    {{- print .Values.externalKafka.user -}}
+    {{- print .Values.externalKafka.sasl.user -}}
 {{- end -}}
 {{- end -}}
 
@@ -607,7 +605,7 @@ Return the S3 protocol
     {{- if .Values.minio.enabled -}}
         {{- ternary "https" "http" .Values.minio.tls.enabled  -}}
     {{- else -}}
-        {{- print .Values.externalS3.protocol -}}
+        {{- ternary "https" "http" .Values.externalS3.tls.enabled  -}}
     {{- end -}}
 {{- end -}}
 
@@ -639,10 +637,8 @@ Return true if TLS is used
 {{- define "milvus.s3.useSSL" -}}
     {{- if .Values.minio.enabled -}}
         {{- .Values.minio.tls.enabled  -}}
-    {{- else if (eq .Values.externalS3.protocol "https") -}}
-        {{- print "true" -}}
     {{- else -}}
-        {{- print "false" -}}
+        {{- .Values.externalS3.tls.enabled  -}}
     {{- end -}}
 {{- end -}}
 
@@ -709,13 +705,17 @@ Init container definition for waiting for the database to be ready
   image: {{ template "milvus.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
+  {{- end }}
+  {{- if .Values.waitContainer.resources }}
+  resources: {{- toYaml .Values.waitContainer.resources | nindent 4 }}
+  {{- else if ne .Values.waitContainer.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .Values.waitContainer.resourcesPreset) | nindent 4 }}
   {{- end }}
   command:
     - bash
     - -ec
     - |
-      #!/bin/bash
       retry_while() {
         local -r cmd="${1:?cmd is missing}"
         local -r retries="${2:-12}"
@@ -735,14 +735,22 @@ Init container definition for waiting for the database to be ready
         "{{ ternary "https" "http" $.Values.etcd.auth.client.secureTransport }}://{{ printf "%s:%v" (include "milvus.etcd.fullname" $ ) (include "milvus.etcd.port" $ ) }}"
       {{- else }}
       {{- range $node :=.Values.externalEtcd.servers }}
-        "{{ ternary "https" "http" $.Values.externalEtcd.secureTransport }}://{{ printf "%s:%v" $node (include "milvus.etcd.port" $) }}"
+        "{{ ternary "https" "http" $.Values.externalEtcd.tls.enabled }}://{{ printf "%s:%v" $node (include "milvus.etcd.port" $) }}"
       {{- end }}
       {{- end }}
       )
 
       check_etcd() {
           local -r etcd_host="${1:-?missing etcd}"
-          if curl --max-time 5 "${etcd_host}/version" | grep etcdcluster; then
+          local params_cert=""
+
+          if echo $etcd_host | grep https; then
+             params_cert="--cacert /bitnami/milvus/conf/cert/etcd/client/{{ .Values.externalEtcd.tls.caCert }} --cert /bitnami/milvus/conf/cert/etcd/client/{{ .Values.externalEtcd.tls.cert }} --key /bitnami/milvus/conf/cert/etcd/client/{{ .Values.externalEtcd.tls.key }}"
+          fi
+          if [ ! -z {{ .Values.externalEtcd.tls.keyPassword }} ]; then
+            params_cert=$params_cert" --pass {{  .Values.externalEtcd.tls.keyPassword }}"
+          fi
+          if curl --max-time 5 "${etcd_host}/version" $params_cert | grep etcdcluster; then
              return 0
           else
              return 1
@@ -761,6 +769,12 @@ Init container definition for waiting for the database to be ready
 
       echo "Connection success"
       exit 0
+  {{- if and (not .Values.etcd.enabled) .Values.externalEtcd.tls.enabled .Values.externalEtcd.tls.existingSecret }}
+  volumeMounts:
+    - name: etcd-client-certs
+      mountPath: /bitnami/milvus/conf/cert/etcd/client
+      readOnly: true
+  {{- end }}
 {{- end -}}
 
 {{/*
@@ -771,13 +785,17 @@ Init container definition for waiting for the database to be ready
   image: {{ template "milvus.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
+  {{- end }}
+  {{- if .Values.waitContainer.resources }}
+  resources: {{- toYaml .Values.waitContainer.resources | nindent 4 }}
+  {{- else if ne .Values.waitContainer.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .Values.waitContainer.resourcesPreset) | nindent 4 }}
   {{- end }}
   command:
     - bash
     - -ec
     - |
-      #!/bin/bash
       retry_while() {
         local -r cmd="${1:?cmd is missing}"
         local -r retries="${2:-12}"
@@ -794,14 +812,24 @@ Init container definition for waiting for the database to be ready
 
       check_s3() {
           local -r s3_host="${1:-?missing s3}"
-          if curl --max-time 5 "${s3_host}" | grep "RequestId"; then
+          local params_cert=""
+
+          {{- if .Values.externalS3.tls.enabled }}
+          {{- if and .Values.externalS3.tls.existingSecret .Values.externalS3.tls.caCert }}
+          params_cert="--cacert /bitnami/milvus/conf/cert/minio/client/{{ .Values.externalS3.tls.caCert }}"
+          {{- else }}
+          params_cert="-k"
+          {{- end }}
+          {{- end }}
+
+          if curl --max-time 5 "${s3_host}" $params_cert | grep "RequestId"; then
              return 0
           else
              return 1
           fi
       }
 
-      host={{ include "milvus.s3.host" . | quote }}
+      host={{ template "milvus.s3.protocol" . }}://{{ printf "%v:%v" (include "milvus.s3.host" .) (include "milvus.s3.port" .) }}
 
       echo "Checking connection to $host"
       if retry_while "check_s3 $host"; then
@@ -813,6 +841,12 @@ Init container definition for waiting for the database to be ready
 
       echo "Connection success"
       exit 0
+  {{- if and (not .Values.minio.enabled) .Values.externalS3.tls.enabled .Values.externalS3.tls.existingSecret }}
+  volumeMounts:
+    - name: minio-client-certs
+      mountPath: /bitnami/milvus/conf/cert/minio/client
+      readOnly: true
+  {{- end }}
 {{- end -}}
 
 {{/*
@@ -820,16 +854,20 @@ Init container definition for waiting for the database to be ready
 */}}
 {{- define "milvus.waitForKafkaInitContainer" -}}
 - name: wait-for-kafka
-  image: {{ template "milvus.image" . }} {{/* Bitnami shell does not have wait-for-port */}}
+  image: {{ template "milvus.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
+  {{- end }}
+  {{- if .Values.waitContainer.resources }}
+  resources: {{- toYaml .Values.waitContainer.resources | nindent 4 }}
+  {{- else if ne .Values.waitContainer.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .Values.waitContainer.resourcesPreset) | nindent 4 }}
   {{- end }}
   command:
     - bash
     - -ec
     - |
-      #!/bin/bash
       retry_while() {
         local -r cmd="${1:?cmd is missing}"
         local -r retries="${2:-12}"
@@ -882,16 +920,20 @@ Init container definition for waiting for the database to be ready
 */}}
 {{- define "milvus.waitForProxyInitContainer" -}}
 - name: wait-for-proxy
-  image: {{ template "milvus.image" . }} {{/* Bitnami shell does not have wait-for-port */}}
+  image: {{ template "milvus.wait-container.image" . }}
   imagePullPolicy: {{ .Values.waitContainer.image.pullPolicy }}
   {{- if .Values.waitContainer.containerSecurityContext.enabled }}
-  securityContext: {{- omit .Values.waitContainer.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.waitContainer.containerSecurityContext "context" $) | nindent 4 }}
+  {{- end }}
+  {{- if .Values.waitContainer.resources }}
+  resources: {{- toYaml .Values.waitContainer.resources | nindent 4 }}
+  {{- else if ne .Values.waitContainer.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .Values.waitContainer.resourcesPreset) | nindent 4 }}
   {{- end }}
   command:
     - bash
     - -ec
     - |
-      #!/bin/bash
       retry_while() {
         local -r cmd="${1:?cmd is missing}"
         local -r retries="${2:-12}"
@@ -934,39 +976,114 @@ Init container definition for waiting for the database to be ready
 Init container definition for waiting for the database to be ready
 */}}
 {{- define "milvus.prepareMilvusInitContainer" -}}
-# This init container renders and merges the Milvus configuration files.
-# We need to use a volume because we're working with ReadOnlyRootFilesystem
-- name: prepare-milvus
+- name: copy-default-configuration
   image: {{ template "milvus.image" .context }}
   imagePullPolicy: {{ .context.Values.milvus.image.pullPolicy }}
   {{- $block := index .context.Values .component }}
   {{- if $block.containerSecurityContext.enabled }}
-  securityContext: {{- omit $block.containerSecurityContext "enabled" | toYaml | nindent 4 }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $block.containerSecurityContext "context" .context) | nindent 4 }}
+  {{- end }}
+  {{- if $block.resources }}
+  resources: {{- toYaml $block.resources | nindent 4 }}
+  {{- else if ne $block.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" $block.resourcesPreset) | nindent 4 }}
   {{- end }}
   command:
     - bash
     - -ec
     - |
-      #!/bin/bash
+      echo "Copying milvus default configuration"
+      cp -r /opt/bitnami/milvus/configs/. /bitnami/milvus/rendered-conf
+  volumeMounts:
+    - name: empty-dir
+      mountPath: /bitnami/milvus/rendered-conf
+      subPath: app-rendered-conf-dir
+# This init container renders and merges the Milvus configuration files.
+# We need to use a volume because we're working with ReadOnlyRootFilesystem
+- name: prepare-milvus
+  image: {{ template "milvus.wait-container.image" .context }}
+  imagePullPolicy: {{ .context.Values.milvus.image.pullPolicy }}
+  {{- $block := index .context.Values .component }}
+  {{- if $block.containerSecurityContext.enabled }}
+  securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" $block.containerSecurityContext "context" .context) | nindent 4 }}
+  {{- end }}
+  {{- if $block.resources }}
+  resources: {{- toYaml $block.resources | nindent 4 }}
+  {{- else if ne $block.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" $block.resourcesPreset) | nindent 4 }}
+  {{- end }}
+  command:
+    - bash
+    - -ec
+    - |
       # Build final milvus.yaml with the sections of the different files
-      find /bitnami/milvus/conf -type f -name *.yaml -print0 | sort -z | xargs -0 yq eval-all '. as $item ireduce ({}; . * $item )' /opt/bitnami/milvus/configs/milvus.yaml > /bitnami/milvus/rendered-conf/pre-render-config_00.yaml
+      find /bitnami/milvus/conf -type f -name *.yaml -print0 | sort -z | xargs -0 yq eval-all '. as $item ireduce ({}; . * $item )' /bitnami/milvus/rendered-conf/milvus.yaml > /bitnami/milvus/rendered-conf/pre-render-config_00.yaml
+
+      # Kafka settings
       {{- if (include "milvus.kafka.deployed" .context) }}
       # HACK: In order to enable Kafka we need to remove all Pulsar settings from the configuration file
       # https://github.com/milvus-io/milvus/blob/master/configs/milvus.yaml#L110
       yq 'del(.pulsar)' /bitnami/milvus/rendered-conf/pre-render-config_00.yaml > /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      # Kafka TLS settings
+      {{- if and (not .context.Values.kafka.enabled) .context.Values.externalKafka.tls.enabled .context.Values.externalKafka.tls.existingSecret }}
+      yq e -i '.kafka.ssl.enabled = true' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      {{- if and .context.Values.externalKafka.tls.cert .context.Values.externalKafka.tls.key }}
+      yq e -i '.kafka.ssl.tlsCert = "/opt/bitnami/milvus/configs/cert/kafka/client/{{ .context.Values.externalKafka.tls.cert }}"' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      yq e -i '.kafka.ssl.tlsKey = "/opt/bitnami/milvus/configs/cert/kafka/client/{{ .context.Values.externalKafka.tls.key }}"' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
       {{- end }}
-      render-template /bitnami/milvus/rendered-conf/pre-render-config_01.yaml > /bitnami/milvus/rendered-conf/milvus.yaml
+      {{- if .context.Values.externalKafka.tls.caCert }}
+      yq e -i '.kafka.ssl.tlsCaCert = "/opt/bitnami/milvus/configs/cert/kafka/client/{{ .context.Values.externalKafka.tls.caCert }}"' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      {{- end }}
+      {{- if .context.Values.externalKafka.tls.keyPassword }}
+      yq e -i '.kafka.ssl.tlsKeyPassword = {{ print "{{ MILVUS_KAFKA_TLS_KEY_PASSWORD }}" | quote }}' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      {{- end }}
+      {{- end }}
+      {{- else }}
+      mv /bitnami/milvus/rendered-conf/pre-render-config_00.yaml /bitnami/milvus/rendered-conf/pre-render-config_01.yaml
+      {{- end }}
+
+      # Minio TLS settings
+      {{- if and (not .context.Values.minio.enabled) .context.Values.externalS3.tls.enabled }}
+      {{- if and .context.Values.externalS3.tls.existingSecret .context.Values.externalS3.tls.caCert }}
+      yq e '.minio.ssl.tlsCACert = "/opt/bitnami/milvus/configs/cert/minio/client/{{ .context.Values.externalS3.tls.caCert }}"' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml > /bitnami/milvus/rendered-conf/pre-render-config_02.yaml
+      {{- else }}
+      yq e '.minio.ssl.tlsCACert = ""' /bitnami/milvus/rendered-conf/pre-render-config_01.yaml > /bitnami/milvus/rendered-conf/pre-render-config_02.yaml
+      {{- end }}
+      {{- else }}
+      mv /bitnami/milvus/rendered-conf/pre-render-config_01.yaml /bitnami/milvus/rendered-conf/pre-render-config_02.yaml
+      {{- end }}
+
+      # Milvus server TLS settings
+      yq e '.common.security.tlsMode = {{ .context.Values.proxy.tls.mode }}' /bitnami/milvus/rendered-conf/pre-render-config_02.yaml > /bitnami/milvus/rendered-conf/pre-render-config_03.yaml
+      {{- if ne (int .context.Values.proxy.tls.mode) 0 }}
+      yq e -i '.tls.serverPemPath = "/opt/bitnami/milvus/configs/cert/milvus/{{ .context.Values.proxy.tls.cert }}"' /bitnami/milvus/rendered-conf/pre-render-config_03.yaml
+      yq e -i '.tls.serverKeyPath = "/opt/bitnami/milvus/configs/cert/milvus/{{ .context.Values.proxy.tls.key }}"' /bitnami/milvus/rendered-conf/pre-render-config_03.yaml
+      {{- if eq (int .context.Values.proxy.tls.mode) 2 }}
+      yq e -i '.tls.caPemPath = "/opt/bitnami/milvus/configs/cert/milvus/{{ .context.Values.proxy.tls.caCert }}"' /bitnami/milvus/rendered-conf/pre-render-config_03.yaml
+      {{- end }}
+      {{- end }}
+
+      render-template /bitnami/milvus/rendered-conf/pre-render-config_03.yaml > /bitnami/milvus/rendered-conf/milvus.yaml
       rm /bitnami/milvus/rendered-conf/pre-render-config*
       chmod 644 /bitnami/milvus/rendered-conf/milvus.yaml
   env:
     - name: BITNAMI_DEBUG
       value: {{ ternary "true" "false" (or .context.Values.milvus.image.debug .context.Values.diagnosticMode.enabled) | quote }}
-    {{- if and (include "milvus.kafka.deployed" .context) (include "milvus.kafka.authEnabled" .context) }}
+    {{- if (include "milvus.kafka.deployed" .context) }}
+    {{- if (include "milvus.kafka.authEnabled" .context) }}
     - name: MILVUS_KAFKA_PASSWORD
       valueFrom:
         secretKeyRef:
           name: {{ include "milvus.kafka.secretName" .context }}
           key: {{ include "milvus.kafka.secretPasswordKey" .context }}
+    {{- end }}
+    {{- if and .context.Values.externalKafka.tls.enabled .context.Values.externalKafka.tls.keyPassword .context.Values.externalKafka.tls.existingSecret }}
+    - name: MILVUS_KAFKA_TLS_KEY_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ printf "%s-external-kafka-tls-passwords" (include "common.names.fullname" .context) }}
+          key: key-password
+    {{- end }}
     {{- end }}
     {{- if and (include "milvus.s3.deployed" .context) }}
     - name: MILVUS_S3_ACCESS_ID
@@ -1005,10 +1122,12 @@ Init container definition for waiting for the database to be ready
     - name: component-extra-config
       mountPath: /bitnami/milvus/conf/03_extra
     {{- end }}
-    - name: tmp
+    - name: empty-dir
       mountPath: /tmp
-    - name: rendered-config
+      subPath: tmp-dir
+    - name: empty-dir
       mountPath: /bitnami/milvus/rendered-conf/
+      subPath: app-rendered-conf-dir
 {{- end -}}
 
 {{/*
@@ -1038,11 +1157,13 @@ Compile all warnings into a single message.
 {{- $messages := list -}}
 {{- $messages := append $messages (include "milvus.validateValues.controllers" .) -}}
 {{- $messages := append $messages (include "milvus.validateValues.attu" .) -}}
+{{- $messages := append $messages (include "milvus.validateValues.proxy.tls" .) -}}
+{{- $messages := append $messages (include "milvus.validateValues.initJob.tls" .) -}}
 {{- $messages := without $messages "" -}}
 {{- $message := join "\n" $messages -}}
 
 {{- if $message -}}
-{{-   printf "\nVALUES VALIDATION:\n%s" $message -}}
+{{-   printf "\nVALUES VALIDATION:\n%s" $message | fail  -}}
 {{- end -}}
 {{- end -}}
 
@@ -1061,5 +1182,45 @@ Function to validate the controller deployment
 {{- define "milvus.validateValues.attu" -}}
 {{- if and .Values.attu.enabled (not .Values.proxy.enabled) -}}
 attu: Attu requires the Milvus proxy to be enabled
+{{- end -}}
+{{- end -}}
+
+{{/*
+Function to validate the proxy tls configurations
+*/}}
+{{- define "milvus.validateValues.proxy.tls" -}}
+{{- if .Values.proxy.enabled -}}
+{{- $modeList := list 0 1 2 -}}
+{{- if not (has (int .Values.proxy.tls.mode) $modeList) -}}
+proxy: tls mode must be in [0, 1, 2]
+{{- end -}}
+{{- if ne (int .Values.proxy.tls.mode) 0 -}}
+{{- if empty .Values.proxy.tls.existingSecret -}}
+proxy: existingSecret can not be empty when tls mode is not 0
+{{- end -}}
+{{- if and (eq (int .Values.proxy.tls.mode) 1) (or (empty .Values.proxy.tls.cert) (empty .Values.proxy.tls.key)) -}}
+proxy: cert and key can not be empty when tls mode is 1
+{{- end -}}
+{{- if and (eq (int .Values.proxy.tls.mode) 2) (or (empty .Values.proxy.tls.cert) (empty .Values.proxy.tls.key) (empty .Values.proxy.tls.caCert)) -}}
+proxy: cert, key and caCert can not be empty when tls mode is 2
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Function to validate the initJob tls configurations
+*/}}
+{{- define "milvus.validateValues.initJob.tls" -}}
+{{- if and .Values.proxy.enabled (ne (int .Values.proxy.tls.mode) 0) -}}
+{{- if empty .Values.initJob.tls.existingSecret -}}
+initJob: existingSecret can not be empty when proxy tls mode is not 0
+{{- end -}}
+{{- if and (eq (int .Values.proxy.tls.mode) 1) (empty .Values.initJob.tls.cert) -}}
+initJob: cert can not be empty when proxy tls mode is 1
+{{- end -}}
+{{- if and (eq (int .Values.proxy.tls.mode) 2) (or (empty .Values.initJob.tls.cert) (empty .Values.initJob.tls.key) (empty .Values.initJob.tls.caCert)) -}}
+initJob: cert, key and caCert can not be empty when proxy tls mode is 2
+{{- end -}}
 {{- end -}}
 {{- end -}}

@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -8,11 +8,8 @@ kind: Deployment
 metadata:
   name: {{ template "appsmith.rts.fullname" . }}
   namespace: {{ include "common.names.namespace" . | quote }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
     app.kubernetes.io/component: rts
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
   {{- if .Values.commonAnnotations }}
   annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -21,22 +18,21 @@ spec:
   {{- if .Values.rts.updateStrategy }}
   strategy: {{- toYaml .Values.rts.updateStrategy | nindent 4 }}
   {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.rts.podLabels .Values.commonLabels ) "context" . ) }}
   selector:
-    matchLabels: {{- include "common.labels.matchLabels" . | nindent 6 }}
+    matchLabels: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 6 }}
       app.kubernetes.io/component: rts
   template:
     metadata:
       {{- if .Values.rts.podAnnotations }}
       annotations: {{- include "common.tplvalues.render" (dict "value" .Values.rts.podAnnotations "context" $) | nindent 8 }}
       {{- end }}
-      labels: {{- include "common.labels.standard" . | nindent 8 }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
         app.kubernetes.io/component: rts
-        {{- if .Values.rts.podLabels }}
-        {{- include "common.tplvalues.render" (dict "value" .Values.rts.podLabels "context" $) | nindent 8 }}
-        {{- end }}
     spec:
       serviceAccountName: {{ template "appsmith.serviceAccountName" . }}
       {{- include "appsmith.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: {{ .Values.rts.automountServiceAccountToken }}
       {{- if .Values.rts.hostAliases }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.rts.hostAliases "context" $) | nindent 8 }}
       {{- end }}
@@ -44,8 +40,8 @@ spec:
       affinity: {{- include "common.tplvalues.render" ( dict "value" .Values.rts.affinity "context" $) | nindent 8 }}
       {{- else }}
       affinity:
-        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.rts.podAffinityPreset "component" "rts" "context" $) | nindent 10 }}
-        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.rts.podAntiAffinityPreset "component" "rts" "context" $) | nindent 10 }}
+        podAffinity: {{- include "common.affinities.pods" (dict "type" .Values.rts.podAffinityPreset "component" "rts" "customLabels" $podLabels "context" $) | nindent 10 }}
+        podAntiAffinity: {{- include "common.affinities.pods" (dict "type" .Values.rts.podAntiAffinityPreset "component" "rts" "customLabels" $podLabels "context" $) | nindent 10 }}
         nodeAffinity: {{- include "common.affinities.nodes" (dict "type" .Values.rts.nodeAffinityPreset.type "key" .Values.rts.nodeAffinityPreset.key "values" .Values.rts.nodeAffinityPreset.values) | nindent 10 }}
       {{- end }}
       {{- if .Values.rts.nodeSelector }}
@@ -64,7 +60,7 @@ spec:
       topologySpreadConstraints: {{- include "common.tplvalues.render" (dict "value" .Values.rts.topologySpreadConstraints "context" .) | nindent 8 }}
       {{- end }}
       {{- if .Values.rts.podSecurityContext.enabled }}
-      securityContext: {{- omit .Values.rts.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.rts.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
       {{- if .Values.rts.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ .Values.rts.terminationGracePeriodSeconds }}
@@ -82,7 +78,7 @@ spec:
           image: {{ template "appsmith.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Values.rts.containerSecurityContext.enabled }}
-          securityContext: {{- omit .Values.rts.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.rts.containerSecurityContext "context" $) | nindent 12 }}
           {{- end }}
           {{- if .Values.diagnosticMode.enabled }}
           command: {{- include "common.tplvalues.render" (dict "value" .Values.diagnosticMode.command "context" $) | nindent 12 }}
@@ -132,6 +128,8 @@ spec:
             {{- end }}
           {{- if .Values.rts.resources }}
           resources: {{- toYaml .Values.rts.resources | nindent 12 }}
+          {{- else if ne .Values.rts.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" .Values.rts.resourcesPreset) | nindent 12 }}
           {{- end }}
           ports:
             - name: http
@@ -141,8 +139,7 @@ spec:
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.rts.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if .Values.rts.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.rts.livenessProbe "enabled") "context" $) | nindent 12 }}
-            httpGet:
-              path: /rts-api/v1/health-check
+            tcpSocket:
               port: http
           {{- end }}
           {{- if .Values.rts.customReadinessProbe }}
@@ -166,6 +163,30 @@ spec:
           lifecycle: {{- include "common.tplvalues.render" (dict "value" .Values.rts.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
           volumeMounts:
+            - name: empty-dir
+              mountPath: /opt/bitnami/appsmith/conf
+              subPath: app-conf-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/appsmith/logs
+              subPath: app-logs-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/appsmith/tmp
+              subPath: app-tmp-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/nginx/conf
+              subPath: nginx-conf-dir
+            - name: empty-dir
+              mountPath: /certs
+              subPath: nginx-certs-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/nginx/tmp
+              subPath: nginx-tmp-dir
+            - name: empty-dir
+              mountPath: /opt/bitnami/nginx/logs
+              subPath: nginx-logs-dir
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp-dir
           {{- if .Values.rts.extraVolumeMounts }}
           {{- include "common.tplvalues.render" (dict "value" .Values.rts.extraVolumeMounts "context" $) | nindent 12 }}
           {{- end }}
@@ -173,6 +194,8 @@ spec:
         {{- include "common.tplvalues.render" (dict "value" .Values.rts.sidecars "context" $) | nindent 8 }}
         {{- end }}
       volumes:
+        - name: empty-dir
+          emptyDir: {}
         {{- if .Values.rts.extraVolumes }}
         {{- include "common.tplvalues.render" (dict "value" .Values.rts.extraVolumes "context" $) | nindent 8 }}
         {{- end }}

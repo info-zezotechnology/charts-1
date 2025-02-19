@@ -1,5 +1,5 @@
 {{- /*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -9,22 +9,19 @@ kind: Service
 metadata:
   name: {{ include "apisix.ingress-controller.fullname" . }}
   namespace: {{ include "common.names.namespace" . | quote }}
-  labels: {{- include "common.labels.standard" . | nindent 4 }}
+  {{- $versionLabel := dict "app.kubernetes.io/version" ( include "common.images.version" ( dict "imageRoot" .Values.ingressController.image "chart" .Chart ) ) }}
+  {{- $labels := include "common.tplvalues.merge" ( dict "values" ( list .Values.commonLabels $versionLabel ) "context" . ) }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $labels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: apisix
     app.kubernetes.io/component: ingress-controller
-    {{- if .Values.commonLabels }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
-    {{- end }}
-  {{- if or .Values.ingressController.service.annotations .Values.commonAnnotations }}
+  {{- if or .Values.ingressController.service.annotations .Values.commonAnnotations (and .Values.ingressController.metrics.enabled .Values.ingressController.metrics.annotations) }}
   annotations:
-    {{- if .Values.ingressController.service.annotations }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.ingressController.service.annotations "context" $) | nindent 4 }}
+    {{- if or .Values.ingressController.service.annotations .Values.commonAnnotations }}
+    {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list .Values.ingressController.service.annotations .Values.commonAnnotations ) "context" . ) }}
+    {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
     {{- end }}
     {{- if and .Values.ingressController.metrics.enabled .Values.ingressController.metrics.annotations }}
     {{- include "common.tplvalues.render" ( dict "value" .Values.ingressController.metrics.annotations "context" $) | nindent 4 }}
-    {{- end }}
-    {{- if .Values.commonAnnotations }}
-    {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
     {{- end }}
   {{- end }}
 spec:
@@ -42,10 +39,13 @@ spec:
   externalTrafficPolicy: {{ .Values.ingressController.service.externalTrafficPolicy | quote }}
   {{- end }}
   {{- if and (eq .Values.ingressController.service.type "LoadBalancer") (not (empty .Values.ingressController.service.loadBalancerSourceRanges)) }}
-  loadBalancerSourceRanges: {{ .Values.ingressController.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{ toYaml .Values.ingressController.service.loadBalancerSourceRanges | nindent 4 }}
   {{- end }}
   {{- if and (eq .Values.ingressController.service.type "LoadBalancer") (not (empty .Values.ingressController.service.loadBalancerIP)) }}
   loadBalancerIP: {{ .Values.ingressController.service.loadBalancerIP }}
+  {{- end }}
+  {{- if .Values.ingressController.service.externalIPs }}
+  externalIPs: {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.service.externalIPs "context" $) | nindent 4 }}
   {{- end }}
   ports:
     - name: http
@@ -57,6 +57,7 @@ spec:
       nodePort: null
       {{- end }}
       targetPort: http
+    {{- if .Values.ingressController.tls.enabled }}
     - name: https
       port: {{ .Values.ingressController.service.ports.https }}
       protocol: TCP
@@ -66,10 +67,12 @@ spec:
       nodePort: null
       {{- end }}
       targetPort: https
+    {{- end }}
     {{- if .Values.ingressController.service.extraPorts }}
     {{- include "common.tplvalues.render" (dict "value" .Values.ingressController.service.extraPorts "context" $) | nindent 4 }}
     {{- end }}
-  selector: {{- include "common.labels.matchLabels" . | nindent 4 }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.ingressController.podLabels .Values.commonLabels ) "context" . ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
     app.kubernetes.io/part-of: apisix
     app.kubernetes.io/component: ingress-controller
 {{- end }}

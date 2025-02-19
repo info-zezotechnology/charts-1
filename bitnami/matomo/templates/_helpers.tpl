@@ -1,5 +1,5 @@
 {{/*
-Copyright VMware, Inc.
+Copyright Broadcom, Inc. All Rights Reserved.
 SPDX-License-Identifier: APACHE-2.0
 */}}
 
@@ -142,3 +142,94 @@ mariadb-password
 db-password
 {{- end -}}
 {{- end -}}
+
+{{/*
+Return the matomo pods needed initContainers
+*/}}
+{{- define "matomo.initContainers" -}}
+{{- if and .Values.volumePermissions.enabled .Values.persistence.enabled }}
+- name: volume-permissions
+  image: {{ include "matomo.volumePermissions.image" . }}
+  imagePullPolicy: {{ .Values.volumePermissions.image.pullPolicy | quote }}
+  command:
+    - /bin/bash
+  args:
+    - -ec
+    - |
+      mkdir -p /bitnami/matomo
+      find /bitnami/matomo -mindepth 0 -maxdepth 1 -not -name ".snapshot" -not -name "lost+found" | xargs -r chown -R {{ .Values.containerSecurityContext.runAsUser }}:{{ .Values.podSecurityContext.fsGroup }}
+  securityContext:
+    runAsUser: 0
+  {{- if .Values.volumePermissions.resources }}
+  resources: {{- toYaml .Values.volumePermissions.resources | nindent 4 }}
+  {{- else if ne .Values.volumePermissions.resourcesPreset "none" }}
+  resources: {{- include "common.resources.preset" (dict "type" .Values.volumePermissions.resourcesPreset) | nindent 4 }}
+  {{- end }}
+  volumeMounts:
+    - name: matomo-data
+      mountPath: /bitnami/matomo
+{{- end }}
+{{- if .Values.certificates.customCAs }}
+- name: certificates
+  image: {{ template "certificates.image" . }}
+  imagePullPolicy: {{ default .Values.image.pullPolicy .Values.certificates.image.pullPolicy }}
+  securityContext:
+    runAsUser: 0
+  {{- if .Values.certificates.command }}
+  command: {{- include "common.tplvalues.render" (dict "value" .Values.certificates.command "context" $) | nindent 4 }}
+  {{- else if .Values.certificates.customCertificate.certificateSecret }}
+  command:
+    - sh
+    - -c
+    - install_packages ca-certificates openssl
+  {{- else }}
+  command:
+    - sh
+    - -c
+    - install_packages ca-certificates openssl
+      && openssl req -new -x509 -days 3650 -nodes -sha256
+      -subj "/CN=$(hostname)" -addext "subjectAltName = DNS:$(hostname)"
+      -out  /etc/ssl/certs/ssl-cert-snakeoil.pem
+      -keyout /etc/ssl/private/ssl-cert-snakeoil.key -extensions v3_req
+  {{- end }}
+  {{- if .Values.certificates.args }}
+  args: {{- include "common.tplvalues.render" (dict "value" .Values.certificates.args "context" $) | nindent 4 }}
+  {{- end }}
+  env: {{- include "common.tplvalues.render" (dict "value" .Values.certificates.extraEnvVars "context" $) | nindent 4 }}
+  envFrom:
+    {{- if .Values.certificates.extraEnvVarsCM }}
+    - configMapRef:
+        name: {{ include "common.tplvalues.render" (dict "value" .Values.certificates.extraEnvVarsCM "context" $) }}
+    {{- end }}
+    {{- if .Values.certificates.extraEnvVarsSecret }}
+    - secretRef:
+        name: {{ include "common.tplvalues.render" (dict "value" .Values.certificates.extraEnvVarsSecret "context" $) }}
+    {{- end }}
+  volumeMounts:
+    - name: etc-ssl-certs
+      mountPath: /etc/ssl/certs
+      readOnly: false
+    - name: etc-ssl-private
+      mountPath: /etc/ssl/private
+      readOnly: false
+    - name: custom-ca-certificates
+      mountPath: /usr/local/share/ca-certificates
+      readOnly: true
+{{- end }}
+{{- end }}
+
+{{/*
+Return if cronjob X is enabled. Takes into account the deprecated value 'cronjobs.enabled'.
+Use: include "matomo.cronjobs.enabled" (dict "context" $ "cronjob" "archive" )
+*/}}
+{{- define "matomo.cronjobs.enabled" -}}
+{{- if ( hasKey .context.Values.cronjobs "enabled" ) -}}
+  {{- if .context.Values.cronjobs.enabled -}}
+    {{- true -}}
+  {{- end -}}
+{{- else -}}
+  {{- if ( get .context.Values.cronjobs .cronjob ).enabled  -}}
+    {{- true -}}
+  {{- end -}}
+{{- end -}}
+{{- end }}
